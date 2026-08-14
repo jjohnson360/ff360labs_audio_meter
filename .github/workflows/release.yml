@@ -1,0 +1,104 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows 11 (x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Targets
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package Windows Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package_win
+          Copy-Item -Path "build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3" -Destination "package_win/" -Recurse
+          Copy-Item -Path "build/FF360Meter_artefacts/Release/Standalone/FF360Meter.exe" -Destination "package_win/"
+          Compress-Archive -Path "package_win/*" -DestinationPath "FF360Meter_v1.0.0_Windows_x64.zip"
+
+      - name: Upload Windows Asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: FF360Meter_v1.0.0_Windows_x64
+          path: FF360Meter_v1.0.0_Windows_x64.zip
+
+  build-macos:
+    name: Build macOS 12+ (Universal Binary)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake (Universal arm64 + x86_64)
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build Targets
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package macOS Artifacts
+        run: |
+          mkdir -p package_mac
+          cp -R build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3 package_mac/ || true
+          cp -R build/FF360Meter_artefacts/Release/AU/FF360Meter.component package_mac/ || true
+          cp -R build/FF360Meter_artefacts/Release/Standalone/FF360Meter.app package_mac/ || true
+          cd package_mac && zip -r ../FF360Meter_v1.0.0_macOS_Universal.zip . && cd ..
+
+      - name: Upload macOS Asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: FF360Meter_v1.0.0_macOS_Universal
+          path: FF360Meter_v1.0.0_macOS_Universal.zip
+
+  create-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: FF360Meter_v1.0.0_Windows_x64
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: FF360Meter_v1.0.0_macOS_Universal
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            FF360Meter_v1.0.0_Windows_x64.zip
+            FF360Meter_v1.0.0_macOS_Universal.zip
+          body_path: FF360LABS_AUDIO_METER_PROGRESS_REPORT.md
+          draft: false
+          prerelease: false

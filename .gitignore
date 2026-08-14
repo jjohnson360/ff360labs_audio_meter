@@ -1,0 +1,51 @@
+# Build folders and binaries
+build/
+Builds/
+out/
+bin/
+*.exe
+*.vst3
+*.component
+*.app
+*.dylib
+*.dll
+*.so
+*.a
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.zip
+*.tar.gz
+
+# IDE and Editor Files
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+*.suo
+*.user
+*.code-workspace
+.idea/
+.vscode/
+
+# CMake Generated Files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+_deps/
+*.ninja
+
+# OS and Scratch Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.log
+scratch/
