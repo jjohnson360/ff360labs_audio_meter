@@ -32,7 +32,7 @@ jobs:
       - name: Package Windows Artifacts
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v1.1.0" }
+          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v1.2.1" }
           New-Item -ItemType Directory -Force -Path package_win
           Copy-Item -Path "build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3" -Destination "package_win/" -Recurse
           Copy-Item -Path "build/FF360Meter_artefacts/Release/Standalone/FF360Meter.exe" -Destination "package_win/"
@@ -65,7 +65,7 @@ jobs:
 
       - name: Package macOS Artifacts
         run: |
-          TAG="${GITHUB_REF_NAME:-v1.1.0}"
+          TAG="${GITHUB_REF_NAME:-v1.2.1}"
           mkdir -p package_mac
           cp -R build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3 package_mac/ || true
           cp -R build/FF360Meter_artefacts/Release/AU/FF360Meter.component package_mac/ || true
@@ -83,6 +83,8 @@ jobs:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -96,6 +98,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: "*.zip"
           body_path: FF360LABS_AUDIO_METER_PROGRESS_REPORT.md
           draft: false
