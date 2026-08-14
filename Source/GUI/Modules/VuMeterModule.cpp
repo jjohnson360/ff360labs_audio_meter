@@ -2,9 +2,55 @@
 #include "../../Core/Constants.h"
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
 
-VuMeterModule::VuMeterModule(AudioFifo<VuMeterData>& fifoToUse)
-    : MeterModule("VU METER", MeterModuleType::VU), meterFifo(fifoToUse)
+VuMeterModule::VuMeterModule(AudioFifo<VuMeterData>& fifoToUse, VuDSP* dsp, juce::AudioProcessorValueTreeState* apvts)
+    : MeterModule("VU METER", MeterModuleType::VU), meterFifo(fifoToUse), vuDSPInstance(dsp)
 {
+    debugHistory.resize(DEBUG_HISTORY_SIZE);
+
+    // Populate Calibration Reference Levels
+    const auto& presets = VuDSP::getCalibrationPresets();
+    for (size_t i = 0; i < presets.size(); ++i)
+    {
+        calibrationSelector.addItem(presets[i].name, (int)i + 1);
+    }
+
+    if (apvts != nullptr)
+    {
+        calibrationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+            *apvts, "vuRefLevel", calibrationSelector);
+    }
+    else
+    {
+        calibrationSelector.setSelectedId(1);
+    }
+
+    int initIdx = calibrationSelector.getSelectedItemIndex();
+    if (initIdx >= 0 && initIdx < (int)presets.size())
+        currentRefLevelDb = presets[(size_t)initIdx].refDb;
+
+    calibrationSelector.onChange = [this] {
+        int idx = calibrationSelector.getSelectedItemIndex();
+        const auto& p = VuDSP::getCalibrationPresets();
+        if (idx >= 0 && idx < (int)p.size())
+        {
+            currentRefLevelDb = p[(size_t)idx].refDb;
+            if (vuDSPInstance != nullptr)
+                vuDSPInstance->setReferenceLevelDb(currentRefLevelDb);
+        }
+        repaint();
+    };
+
+    addAndMakeVisible(calibrationSelector);
+
+    // Dev Debug Overlay Button
+    debugButton.setClickingTogglesState(true);
+    debugButton.setColour(juce::TextButton::buttonOnColourId, ff360_labs::AccentAmberRed.withAlpha(0.6f));
+    debugButton.onClick = [this] {
+        showDebugOverlay = debugButton.getToggleState();
+        repaint();
+    };
+    addAndMakeVisible(debugButton);
+
     startTimerHz(60);
 }
 
@@ -21,16 +67,23 @@ void VuMeterModule::timerCallback()
         currentData = newData;
     }
 
-    needleL.setTarget(currentData.vuL);
-    needleR.setTarget(currentData.vuR);
+    // Phase 9.1: Single Source of Timing Truth
+    // Direct 1:1 needle tracking from DSP ballistics (no stacked spring lag)
+    renderedVuL = currentData.vuL;
+    renderedVuR = currentData.vuR;
 
-    needleL.update(1.0f / 60.0f);
-    needleR.update(1.0f / 60.0f);
+    // Record sample in debug history ring buffer
+    DebugSample s;
+    s.dspVu = currentData.vuL;
+    s.needleVu = renderedVuL;
+    s.rawDbfs = currentData.rawDbfslL;
+    debugHistory[debugWriteIndex] = s;
+    debugWriteIndex = (debugWriteIndex + 1) % DEBUG_HISTORY_SIZE;
 
     repaint();
 }
 
-void VuMeterModule::drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bounds, float smoothedVu, const juce::String& channelLabel)
+void VuMeterModule::drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bounds, float vuValue, const juce::String& channelLabel)
 {
     // Draw Glass panel container for the channel gauge
     FF360LabsLookAndFeel::drawGlassPanel(g, bounds, 6.0f);
@@ -120,8 +173,14 @@ void VuMeterModule::drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bo
         }
     }
 
-    // 5. Spring-Damped Needle
-    float clampedVu = juce::jlimit(minVu, maxVu, smoothedVu);
+    // 0 VU Reference Sub-Label on Dial Face
+    g.setFont(FF360LabsLookAndFeel::getCustomFont(7.5f, juce::Font::plain));
+    g.setColour(ff360_labs::TextMuted);
+    juce::String calRefLabel = "0 VU = " + juce::String((int)currentRefLevelDb) + " dBFS";
+    g.drawText(calRefLabel, juce::Rectangle<float>(cx - 45.0f, cy - radius * 0.45f, 90.0f, 12.0f), juce::Justification::centred, false);
+
+    // 5. Direct 1:1 Rendered Needle (Instantaneous, exact ballistics tracking)
+    float clampedVu = juce::jlimit(minVu, maxVu, vuValue);
     float normalizedAngle = (clampedVu - minVu) / (maxVu - minVu);
     float needleAngle = minAngle + normalizedAngle * (maxAngle - minAngle);
 
@@ -153,20 +212,107 @@ void VuMeterModule::drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bo
     FF360LabsLookAndFeel::drawStatTile(g, readoutArea, "READOUT", valStr, isWarning);
 }
 
+void VuMeterModule::drawDebugOverlay (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    // Semi-transparent diagnostic HUD
+    auto hudArea = bounds.removeFromBottom(110.0f).reduced(8.0f);
+    g.setColour(juce::Colours::black.withAlpha(0.85f));
+    g.fillRoundedRectangle(hudArea, 6.0f);
+    g.setColour(ff360_labs::AccentAmberRed.withAlpha(0.8f));
+    g.drawRoundedRectangle(hudArea, 6.0f, 1.2f);
+
+    auto header = hudArea.removeFromTop(16.0f).reduced(4.0f, 0.0f);
+    g.setFont(FF360LabsLookAndFeel::getCustomFont(9.0f, juce::Font::bold));
+    g.setColour(ff360_labs::AccentAmberRed);
+    g.drawText("DEV TIMING OSCILLOSCOPE // DSP BALLISTICS vs RENDERED NEEDLE", header, juce::Justification::centredLeft, false);
+
+    // Scope Graph area
+    auto plotRect = hudArea.reduced(6.0f);
+    g.setColour(ff360_labs::ContainerDark.darker(0.6f));
+    g.fillRect(plotRect);
+    g.setColour(ff360_labs::HairlineBorder);
+    g.drawRect(plotRect, 1.0f);
+
+    // Grid lines: 0 VU line and -10 VU line
+    float yZero = plotRect.getY() + plotRect.getHeight() * (3.0f - 0.0f) / 23.0f;
+    g.setColour(ff360_labs::AccentAmberRed.withAlpha(0.3f));
+    g.drawHorizontalLine((int)yZero, plotRect.getX(), plotRect.getRight());
+
+    // Render DSP VU trace (Gold) vs Needle Angle (Cyan)
+    juce::Path dspPath;
+    juce::Path needlePath;
+
+    size_t count = debugHistory.size();
+    for (size_t i = 0; i < count; ++i)
+    {
+        size_t ringIdx = (debugWriteIndex + i) % count;
+        const auto& sample = debugHistory[ringIdx];
+
+        float x = plotRect.getX() + (float)i / (float)(count - 1) * plotRect.getWidth();
+        
+        // Scale VU (-20 to +3) to Y
+        float normDsp = juce::jlimit(0.0f, 1.0f, (sample.dspVu - (-20.0f)) / 23.0f);
+        float normNeedle = juce::jlimit(0.0f, 1.0f, (sample.needleVu - (-20.0f)) / 23.0f);
+
+        float yDsp = plotRect.getBottom() - normDsp * plotRect.getHeight();
+        float yNeedle = plotRect.getBottom() - normNeedle * plotRect.getHeight();
+
+        if (i == 0)
+        {
+            dspPath.startNewSubPath(x, yDsp);
+            needlePath.startNewSubPath(x, yNeedle);
+        }
+        else
+        {
+            dspPath.lineTo(x, yDsp);
+            needlePath.lineTo(x, yNeedle);
+        }
+    }
+
+    g.setColour(ff360_labs::AccentGold.withAlpha(0.9f));
+    g.strokePath(dspPath, juce::PathStrokeType(1.5f));
+
+    g.setColour(juce::Colour(0xff00e5ff).withAlpha(0.7f));
+    g.strokePath(needlePath, juce::PathStrokeType(1.0f));
+
+    // Legend
+    g.setFont(FF360LabsLookAndFeel::getCustomFont(8.0f, juce::Font::plain));
+    g.setColour(ff360_labs::AccentGold);
+    g.drawText("Gold: Raw DSP (120ms True RMS)", juce::Rectangle<float>(plotRect.getX() + 4.0f, plotRect.getY() + 2.0f, 160.0f, 10.0f), juce::Justification::left, false);
+    g.setColour(juce::Colour(0xff00e5ff));
+    g.drawText("Cyan: Needle Angle (Direct 1:1, 0ms Lag)", juce::Rectangle<float>(plotRect.getX() + 170.0f, plotRect.getY() + 2.0f, 190.0f, 10.0f), juce::Justification::left, false);
+}
+
 void VuMeterModule::paintModule(juce::Graphics& g)
 {
-    auto bounds = getModuleBounds().toFloat().reduced(6.0f);
+    auto fullBounds = getModuleBounds().toFloat();
     
-    float laneWidth = (bounds.getWidth() - 8.0f) * 0.5f;
+    // Top Control Strip Area (Module Header)
+    auto topStrip = fullBounds.removeFromTop(24.0f).reduced(4.0f, 2.0f);
+
+    auto gaugeBounds = fullBounds.reduced(4.0f);
+    float laneWidth = (gaugeBounds.getWidth() - 8.0f) * 0.5f;
     
-    juce::Rectangle<float> leftLane(bounds.getX(), bounds.getY(), laneWidth, bounds.getHeight());
-    juce::Rectangle<float> rightLane(bounds.getRight() - laneWidth, bounds.getY(), laneWidth, bounds.getHeight());
+    juce::Rectangle<float> leftLane(gaugeBounds.getX(), gaugeBounds.getY(), laneWidth, gaugeBounds.getHeight());
+    juce::Rectangle<float> rightLane(gaugeBounds.getRight() - laneWidth, gaugeBounds.getY(), laneWidth, gaugeBounds.getHeight());
     
-    drawVuArcGauge(g, leftLane, needleL.getCurrent(), "CH 1 // LEFT");
-    drawVuArcGauge(g, rightLane, needleR.getCurrent(), "CH 2 // RIGHT");
+    drawVuArcGauge(g, leftLane, renderedVuL, "CH 1 // LEFT");
+    drawVuArcGauge(g, rightLane, renderedVuR, "CH 2 // RIGHT");
+
+    if (showDebugOverlay)
+    {
+        drawDebugOverlay(g, gaugeBounds);
+    }
 }
 
 void VuMeterModule::resizedModule()
 {
+    auto bounds = getModuleBounds().reduced(4);
+    auto topStrip = bounds.removeFromTop(22);
+
+    calibrationSelector.setBounds(topStrip.removeFromLeft(210));
+    topStrip.removeFromLeft(6);
+    debugButton.setBounds(topStrip.removeFromLeft(70));
 }
+
 

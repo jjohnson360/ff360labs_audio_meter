@@ -69,7 +69,16 @@ public:
     AudioFifo<HistogramData> histogramFifo;
     std::atomic<bool> triggerHistogramReset { false };
 
+    // Phase 9: Signal & Connection State Monitoring
+    bool getIsInputConnected() const { return isInputConnected.load(); }
+    bool getIsAudioSilent() const { return isAudioSilent.load(); }
+    float getCurrentPeakLevelDb() const { return currentPeakLevelDb.load(); }
+
 private:
+    std::atomic<bool> isInputConnected { false };
+    std::atomic<bool> isAudioSilent { true };
+    std::atomic<float> currentPeakLevelDb { -100.0f };
+
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FF360MeterProcessor)

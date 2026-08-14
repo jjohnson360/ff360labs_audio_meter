@@ -18,14 +18,15 @@ A professional, modular audio metering and mastering analysis suite built with C
 
 ### 2. Metering Suite
 - **Peak / RMS Meter**: Hardware-inspired discrete segmented LED level bars (~48 segments) with illuminated topmost glow, core RMS luminance, and horizontal -3dB threshold markers.
-- **VU Meter**: Analog-modeled arc gauge with snappy 120ms rise / 350ms decay ballistics, spring-damped physical needle motion with glow trails, and digital stat-tiles.
+- **VU Meter**: Analog-modeled arc gauge with true windowed RMS power integration ($x^2 \to \text{IIR} \to \sqrt{\cdot}$), 1:1 needle tracking (0ms secondary lag), adjustable calibration reference levels (-18, -20, -14, -12, -10 dBFS), and real-time Dev Timing Oscilloscope (`DEV OSC`).
 - **LUFS Meter (ITU-R BS.1770-4)**: Multi-pointer circular dial displaying Integrated, Short-Term, and Momentary loudness, accompanied by target compliance stat-tiles (`PASS`, `HIGH`, `LOW`).
 - **Target Profile Presets**: Built-in platform targets for Spotify (-14 LUFS), YouTube (-14 LUFS), Apple Music (-16 LUFS), Netflix (-27 LUFS), EBU R128 (-23 LUFS), Club/Master (-9 LUFS), AES Streaming (-16 LUFS), and Custom targets.
 - **Spectrum Analyzer**: 2048-point log-scaled FFT analyzer (20Hz–20kHz) with peak-hold ballistics and illuminated spectral contours.
 - **Histogram (5-Min Rolling & A/B Compare)**: Real-time loudness distribution histogram with modal peak highlights, snapshot capture (`CAP A`), and dual-pass A/B compare overlay with real-time modal delta readouts.
 - **Phase Scope**: Goniometer radar with Lissajous decaying persistence traces, polar graticule, and correlation stat-tiles.
 
-### 3. Workflow & Accessibility Tools
+### 3. Workflow & Standalone Audio Capture
+- **Standalone System Audio (Loopback) Capture**: In-app Audio I/O settings modal, real-time input status indicators (`LIVE I/O`, `IDLE / SILENT`, `NO INPUT`), and native OS loopback capture routing (Windows WASAPI/Stereo Mix, macOS BlackHole/Loopback guide, Linux PipeWire).
 - **Session Report Export**: One-click export of session metrics (LUFS-I, LRA, Short-Term Max, Peak L/R, True Peak) as Spreadsheet CSV or branded print-to-PDF HTML mastering deliverables.
 - **Adaptive Frame Rate & Performance Budgeting**: Per-module target refresh rates with automated load monitoring (`PERF: 60 FPS` / `PERF: 45 FPS`).
 - **Colorblind-Safe Accessibility Palette**: Centralized toggle swapping warning tones for high-contrast Accessible Sky Blue (`#38bdf8`) for deuteranopia/protanopia compliance.
@@ -34,8 +35,9 @@ A professional, modular audio metering and mastering analysis suite built with C
 
 ## Architecture
 - **Lock-Free Concurrency**: Audio DSP algorithms run entirely lock-free on the realtime audio thread, publishing frames to GUI visualizers via circular `AudioFifo` buffers.
+- **Single Source of Timing Truth**: DSP performs exact mathematical ballistics integration while visualizers render 1:1 directly, preventing stacked smoothing latency.
 - **Centralized LookAndFeel**: The entire interface is driven by `FF360LabsLookAndFeel` with custom typography, frosted glass panels, hairline metallic gold borders, and stat-tile components.
-- **Full State Serialization**: Plugin layouts, active target profiles, and accessibility preferences persist via `juce::AudioProcessorValueTreeState` and `juce::ValueTree`.
+- **Full State Serialization**: Plugin layouts, calibration levels, active target profiles, and accessibility preferences persist via `juce::AudioProcessorValueTreeState` and `juce::ValueTree`.
 
 ---
 

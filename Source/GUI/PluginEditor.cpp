@@ -1,18 +1,26 @@
 #include "PluginEditor.h"
 #include "../Core/Constants.h"
 #include "../Core/SessionReport.h"
+#include "Common/AudioSettingsModal.h"
+
+#if JucePlugin_Build_Standalone
+ #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
+#endif
 
 FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
       btnGridMode("Grid Mode"),
       btnFocusMode("Focus Mode"),
       btnExportReport("Export Report"),
-      btnColorblindMode("Accessible: OFF")
+      btnColorblindMode("Accessible: OFF"),
+      btnAudioSettings("AUDIO I/O")
 {
     setLookAndFeel(&customLookAndFeel);
     
     addAndMakeVisible(meterDashboard);
     addAndMakeVisible(perfBadge);
+    addAndMakeVisible(ioStatusBadge);
+    addAndMakeVisible(btnAudioSettings);
     addAndMakeVisible(btnColorblindMode);
     addAndMakeVisible(btnExportReport);
     addAndMakeVisible(layoutComboBox);
@@ -25,6 +33,16 @@ FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
     perfBadge.setFont(FF360LabsLookAndFeel::getCustomFont(10.0f, juce::Font::bold));
     perfBadge.setColour(juce::Label::textColourId, ff360_labs::AccentGold);
     perfBadge.setJustificationType(juce::Justification::centred);
+
+    // I/O Status Badge Setup
+    ioStatusBadge.setText("● LIVE I/O", juce::dontSendNotification);
+    ioStatusBadge.setFont(FF360LabsLookAndFeel::getCustomFont(10.0f, juce::Font::bold));
+    ioStatusBadge.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
+    ioStatusBadge.setJustificationType(juce::Justification::centred);
+
+    btnAudioSettings.onClick = [this] {
+        openAudioSettings();
+    };
 
     // Colorblind Mode Attachment
     btnColorblindMode.setClickingTogglesState(true);
@@ -108,12 +126,12 @@ FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
         loadLayout(factory[0]);
     }
 
-    startTimerHz(4); // 4Hz performance budget monitor
+    startTimerHz(4); // 4Hz performance budget and I/O status monitor
     
     // Set a default size and allow resizing
     setResizable(true, true);
-    setResizeLimits(800, 460, 2400, 1800);
-    setSize(1040, 640);
+    setResizeLimits(900, 480, 2400, 1800);
+    setSize(1120, 680);
 }
 
 FF360MeterEditor::~FF360MeterEditor()
@@ -154,6 +172,26 @@ void FF360MeterEditor::timerCallback()
         perfBadge.setText("PERF: 60 FPS", juce::dontSendNotification);
         perfBadge.setColour(juce::Label::textColourId, ff360_labs::AccentGold);
     }
+
+    // Input Signal & Device Activity Monitor
+    bool isConnected = audioProcessor.getIsInputConnected();
+    bool isSilent = audioProcessor.getIsAudioSilent();
+
+    if (!isConnected)
+    {
+        ioStatusBadge.setText("● NO INPUT", juce::dontSendNotification);
+        ioStatusBadge.setColour(juce::Label::textColourId, ff360_labs::AccentAmberRed);
+    }
+    else if (isSilent)
+    {
+        ioStatusBadge.setText("● IDLE / SILENT", juce::dontSendNotification);
+        ioStatusBadge.setColour(juce::Label::textColourId, ff360_labs::AccentGold.withAlpha(0.8f));
+    }
+    else
+    {
+        ioStatusBadge.setText("● LIVE I/O", juce::dontSendNotification);
+        ioStatusBadge.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
+    }
 }
 
 MeterModule* FF360MeterEditor::createModule (MeterModuleType type)
@@ -163,7 +201,7 @@ MeterModule* FF360MeterEditor::createModule (MeterModuleType type)
         case MeterModuleType::PeakRms:
             return new PeakRmsMeterModule (audioProcessor.meterFifo);
         case MeterModuleType::VU:
-            return new VuMeterModule (audioProcessor.vuFifo);
+            return new VuMeterModule (audioProcessor.vuFifo, &audioProcessor.vuDSP, &audioProcessor.apvts);
         case MeterModuleType::LUFS:
             return new LufsMeterModule (audioProcessor.lufsFifo, audioProcessor.lufsDSP, &audioProcessor.apvts);
         case MeterModuleType::Spectrum:
@@ -176,6 +214,21 @@ MeterModule* FF360MeterEditor::createModule (MeterModuleType type)
             return nullptr;
     }
 }
+
+void FF360MeterEditor::openAudioSettings()
+{
+    AudioSettingsModal::showModal(this, audioProcessor, getStandaloneDeviceManager());
+}
+
+juce::AudioDeviceManager* FF360MeterEditor::getStandaloneDeviceManager()
+{
+   #if JucePlugin_Build_Standalone
+    if (auto* holder = juce::StandalonePluginHolder::getInstance())
+        return &holder->deviceManager;
+   #endif
+    return nullptr;
+}
+
 
 void FF360MeterEditor::triggerExportReport()
 {
@@ -384,9 +437,11 @@ void FF360MeterEditor::resized()
     btnFocusMode.setBounds(headerRect.removeFromRight(84).reduced(3, 6));
     btnColorblindMode.setBounds(headerRect.removeFromRight(115).reduced(3, 6));
     btnExportReport.setBounds(headerRect.removeFromRight(105).reduced(3, 6));
+    btnAudioSettings.setBounds(headerRect.removeFromRight(95).reduced(3, 6));
     addModuleComboBox.setBounds(headerRect.removeFromRight(130).reduced(3, 6));
     layoutComboBox.setBounds(headerRect.removeFromRight(145).reduced(3, 6));
-    perfBadge.setBounds(headerRect.removeFromRight(100).reduced(3, 6));
+    perfBadge.setBounds(headerRect.removeFromRight(90).reduced(3, 6));
+    ioStatusBadge.setBounds(headerRect.removeFromRight(110).reduced(3, 6));
     
     meterDashboard.setBounds(bounds.reduced(8));
 }

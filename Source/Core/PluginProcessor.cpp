@@ -122,6 +122,24 @@ void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    // Update VU Reference Level from APVTS
+    if (auto* param = apvts.getRawParameterValue("vuRefLevel"))
+    {
+        int idx = (int)param->load();
+        const auto& presets = VuDSP::getCalibrationPresets();
+        if (idx >= 0 && idx < (int)presets.size())
+            vuDSP.setReferenceLevelDb(presets[(size_t)idx].refDb);
+    }
+
+    // Input Signal & Device Activity Monitoring
+    bool hasInputs = (totalNumInputChannels > 0 && buffer.getNumSamples() > 0);
+    isInputConnected.store(hasInputs);
+
+    float maxMag = hasInputs ? buffer.getMagnitude(0, buffer.getNumSamples()) : 0.0f;
+    float peakDb = (maxMag > 1e-5f) ? (20.0f * std::log10(maxMag)) : -100.0f;
+    currentPeakLevelDb.store(peakDb);
+    isAudioSilent.store(maxMag < 0.0001f); // Lower than ~-80 dBFS considered idle silence
+
     // Calculate Peak and RMS for this block
     MeterData blockData = peakRmsDSP.processBlock(buffer);
     
@@ -197,6 +215,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FF360MeterProcessor::createP
         "Target Profile",
         ff360_labs::LoudnessTarget::getPresetNames(),
         0
+    ));
+
+    juce::StringArray vuChoices;
+    for (const auto& preset : VuDSP::getCalibrationPresets())
+        vuChoices.add(preset.name);
+
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ "vuRefLevel", 1 },
+        "VU Calibration Reference",
+        vuChoices,
+        0 // Default to 0: -18 dBFS (Broadcast / SMPTE)
     ));
 
     layout.add(std::make_unique<juce::AudioParameterBool>(

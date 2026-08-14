@@ -56,6 +56,8 @@ target_sources(FF360Meter
         Source/GUI/LookAndFeel/FF360LabsLookAndFeel.cpp
         Source/GUI/Common/MeterModule.h
         Source/GUI/Common/MeterModule.cpp
+        Source/GUI/Common/AudioSettingsModal.h
+        Source/GUI/Common/AudioSettingsModal.cpp
         Source/GUI/Layout/MeterDashboard.h
         Source/GUI/Layout/MeterDashboard.cpp
         Source/GUI/Layout/LayoutManager.h
@@ -86,6 +88,7 @@ target_compile_definitions(FF360Meter
 target_link_libraries(FF360Meter
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_audio_devices
         juce::juce_audio_processors
         juce::juce_gui_basics
         juce::juce_gui_extra

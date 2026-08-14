@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include "../Core/PluginProcessor.h"
 #include "LookAndFeel/FF360LabsLookAndFeel.h"
 #include "Layout/MeterDashboard.h"
@@ -38,7 +39,9 @@ private:
     juce::TextButton btnFocusMode;
     juce::TextButton btnExportReport;
     juce::TextButton btnColorblindMode;
+    juce::TextButton btnAudioSettings;
     juce::Label perfBadge;
+    juce::Label ioStatusBadge;
     juce::ComboBox layoutComboBox;
     juce::ComboBox addModuleComboBox;
 
@@ -48,6 +51,8 @@ private:
     MeterModule* createModule (MeterModuleType type);
     void populateLayoutPresets();
     void triggerExportReport();
+    void openAudioSettings();
+    juce::AudioDeviceManager* getStandaloneDeviceManager();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FF360MeterEditor)
 };
