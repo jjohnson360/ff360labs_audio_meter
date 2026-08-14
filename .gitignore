@@ -49,3 +49,6 @@ ehthumbs.db
 Thumbs.db
 *.log
 scratch/
+
+#Prompts Files
+Prompts/    
