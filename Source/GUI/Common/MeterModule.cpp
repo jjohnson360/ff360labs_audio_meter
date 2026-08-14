@@ -5,13 +5,32 @@
 MeterModule::MeterModule(const juce::String& name, MeterModuleType type)
     : moduleName(name), moduleType(type)
 {
-    addAndMakeVisible(detachButton);
-    addAndMakeVisible(maximizeButton);
-    addAndMakeVisible(closeButton);
-    
-    closeButton.onClick = [this] { if (onClose) onClose(this); };
-    maximizeButton.onClick = [this] { if (onMaximize) onMaximize(this); };
-    detachButton.onClick = [this] { if (onDetach) onDetach(this); };
+    addAndMakeVisible(menuButton);
+    menuButton.onClick = [this] { showModuleMenu(); };
+}
+
+void MeterModule::showModuleMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Resize");
+    menu.addItem(2, "Detach to Window", onDetach != nullptr);
+    menu.addSeparator();
+    menu.addItem(3, "Close / Remove", onClose != nullptr);
+
+    auto options = juce::PopupMenu::Options()
+                       .withTargetComponent(&menuButton)
+                       .withMaximumNumColumns(1);
+
+    menu.showMenuAsync(options, [this](int result)
+    {
+        switch (result)
+        {
+            case 1: if (onMaximize) onMaximize(this); break;
+            case 2: if (onDetach)   onDetach(this);   break;
+            case 3: if (onClose)    onClose(this);    break;
+            default: break;
+        }
+    });
 }
 
 void MeterModule::paint(juce::Graphics& g)
@@ -46,9 +65,7 @@ void MeterModule::resized()
 {
     auto headerRect = getLocalBounds().removeFromTop(headerHeight);
     
-    closeButton.setBounds(headerRect.removeFromRight(headerHeight).reduced(4));
-    maximizeButton.setBounds(headerRect.removeFromRight(headerHeight).reduced(4));
-    detachButton.setBounds(headerRect.removeFromRight(headerHeight).reduced(4));
+    menuButton.setBounds(headerRect.removeFromRight(headerHeight + 4).reduced(3, 4));
     
     // Delegate to derived class
     resizedModule();

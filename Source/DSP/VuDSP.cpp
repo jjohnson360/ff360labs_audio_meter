@@ -66,9 +66,13 @@ VuMeterData VuDSP::processBlock(const juce::AudioBuffer<float>& buffer)
         statePowerR += aR * (powerR - statePowerR);
     }
 
-    // AES-17 standard: full-scale sine peak 1.0 has power 0.5, AES-17 RMS = sqrt(2 * mean_square) = 1.0 (0 dBFS)
-    float rmsL = std::sqrt(std::max(0.0f, statePowerL * 2.0f));
-    float rmsR = std::sqrt(std::max(0.0f, statePowerR * 2.0f));
+    // True RMS: sqrt of IIR-integrated mean-square power.
+    // Expected calibration values (see CalibrationTest.h for full suite):
+    //   0 dBFS full-scale sine  -> statePowerL converges to ~0.5 -> rmsL = 0.707 -> dbfsL = -3.01 dBFS
+    //   -18 dBFS sine           -> statePowerL ~= 0.5 * 10^(-18/10) -> dbfsL = -21.01 dBFS
+    //   0 VU (ref=-18): signal at -18 dBFS sine -> vuL = -18.0 - (-18.0) = 0.0 VU  ✓
+    float rmsL = std::sqrt(std::max(0.0f, statePowerL));
+    float rmsR = std::sqrt(std::max(0.0f, statePowerR));
 
     // Convert RMS to dBFS
     float dbfsL = (rmsL > 1e-5f) ? (20.0f * std::log10(rmsL)) : -60.0f;
@@ -91,5 +95,15 @@ float VuDSP::gainToVuDb(float linearGain)
         return -60.0f;
         
     return 20.0f * std::log10(linearGain);
+}
+
+float VuDSP::getExpectedVuForSinePeak(float sinePeakDbfs, float refLevelDb)
+{
+    // A sine wave's RMS is 3.01 dB below its peak.
+    // VU reading = RMS_dBFS - referenceLevel
+    // Example: -18 dBFS sine, ref=-18 -> VU = (-18 - 3.01) - (-18) = -3.01 VU
+    // Example: -20 dBFS sine, ref=-18 -> VU = (-20 - 3.01) - (-18) = -5.01 VU
+    float sineRmsDbfs = sinePeakDbfs - 3.01f;
+    return sineRmsDbfs - refLevelDb;
 }
 

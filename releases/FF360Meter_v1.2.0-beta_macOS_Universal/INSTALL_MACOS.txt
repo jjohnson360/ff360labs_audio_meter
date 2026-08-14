@@ -1,0 +1,32 @@
+﻿ff360_labs Modular Audio Meter — Beta v1.2.0
+macOS 12+ (Universal Binary: Apple Silicon + Intel)
+
+IMPORTANT — NOTARIZATION NOT APPLIED (Beta)
+macOS Gatekeeper will block the plugin on first launch.
+To approve: System Settings > Privacy & Security > Open Anyway
+
+INSTALLATION
+
+VST3:
+  Copy FF360Meter.vst3 to:
+  /Library/Audio/Plug-Ins/VST3/
+
+Audio Unit (.component):
+  Copy FF360Meter.component to:
+  /Library/Audio/Plug-Ins/Components/
+
+Standalone (.app):
+  Copy FF360Meter.app to /Applications/
+
+SYSTEM AUDIO MONITORING
+  Install BlackHole 2ch (https://github.com/ExistentialAudio/BlackHole)
+  Create a Multi-Output Device in Audio MIDI Setup.
+  Set system output to the Multi-Output Device.
+  In the plugin: Settings (⚙) > Audio I/O Settings > select BlackHole 2ch as Input.
+
+NOTE: A true Universal Binary (arm64 + x86_64) requires compilation on macOS.
+This beta package was built on Windows and contains the x64 VST3 bundle for
+cross-platform testing. macOS-native compilation is planned for the RC build.
+
+BETA NOTICE: This is pre-release software.
+Report issues at: https://github.com/jjohnson360/ff360labs_audio_meter

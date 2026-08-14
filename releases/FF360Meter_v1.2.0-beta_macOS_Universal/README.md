@@ -65,10 +65,7 @@ cmake --build build --config Release
 
 ## Release Notes — Beta v1.2.0 (August 14, 2026)
 
-### Hotfix — Beta v1.2.1 (August 14, 2026)
-- **[REGRESSION] Phase Scope blank / no display**: The Phase 10.4 WASAPI freeze fix incorrectly placed `samplePairs.clear()` immediately after `repaint()` in `timerCallback()`. Because `repaint()` is asynchronous, the vector was already empty by the time `updateScopeImage()` ran. Fixed: clear moved back inside `updateScopeImage()` after drawing; zero-bounds early-return also clears explicitly; 8192-pair cap in `timerCallback()` remains as runaway protection.
-
-### Bug Fixes — Beta v1.2.0 (August 14, 2026)
+### Bug Fixes
 - **[CRITICAL] RMS accuracy — double-sqrt bug** (`PeakRmsDSP`): `buffer.getRMSLevel()` already returns RMS; the extra `std::sqrt()` wrapper was computing `RMS^0.5`, making all RMS readings run consistently hot. Resolved.
 - **[CRITICAL] VU calibration — AES-17 ×2 bias** (`VuDSP`): A `* 2.0f` multiplier added a constant phantom +3 dB to all VU readings. Removed; now uses plain `sqrt(power)` = true RMS.
 - **[PLATFORM] Phase Scope freeze on Windows / WASAPI**: `samplePairs.clear()` was inside `updateScopeImage()` which bails early on zero-size bounds — causing the accumulation vector to grow unbounded on WASAPI where callbacks arrive before `resized()` propagates. Fixed: unconditional clear in `timerCallback()` + 8192-pair hard cap.
@@ -87,4 +84,3 @@ cmake --build build --config Release
 - Peak/RMS unlit segment opacity halved (0.06 → 0.03) for cleaner active-segment contrast.
 - Phase Scope persistence trail reduced (0.82 → 0.75 alpha) for snappier feel.
 - Spectrum decay smoothing time constant increased (0.1s → 0.18s) + 3-bin moving average for smoother curves.
-

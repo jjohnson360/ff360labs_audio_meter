@@ -51,6 +51,24 @@ VuMeterModule::VuMeterModule(AudioFifo<VuMeterData>& fifoToUse, VuDSP* dsp, juce
     };
     addAndMakeVisible(debugButton);
 
+#if JUCE_DEBUG
+    calTestButton.setColour(juce::TextButton::buttonColourId, ff360_labs::ContainerDark);
+    calTestButton.setColour(juce::TextButton::textColourOffId, ff360_labs::AccentGold);
+    calTestButton.onClick = [this] {
+        double sr = 48000.0; // use nominal rate; DSP instance not accessible from GUI
+        ff360_labs::CalibrationTestRunner::runAndLogFullSuite(sr);
+        auto r1 = ff360_labs::CalibrationTestRunner::runSineTest(-18.0f, currentRefLevelDb, sr);
+        auto r2 = ff360_labs::CalibrationTestRunner::runSineTest(-20.0f, currentRefLevelDb, sr);
+        calResultString = "[CAL AUDIT @" + juce::String(sr/1000.0f,0) + "kHz ref=" + juce::String((int)currentRefLevelDb) + "dBFS]\n"
+                        + "-18dBFS sine: " + r1.summary() + "\n"
+                        + "-20dBFS sine: " + r2.summary();
+        showDebugOverlay = true;
+        debugButton.setToggleState(true, juce::dontSendNotification);
+        repaint();
+    };
+    addAndMakeVisible(calTestButton);
+#endif
+
     startTimerHz(60);
 }
 
@@ -147,14 +165,14 @@ void VuMeterModule::drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bo
     // 4. Calibration Ticks and Numbers
     g.setFont(FF360LabsLookAndFeel::getCustomFont(8.5f, juce::Font::plain));
     
-    const int tickValues[] = { -20, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3 };
+    const int tickValues[] = { -20, -15, -12, -10, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3 };
     for (int v : tickValues)
     {
         float norm = (v - minVu) / (maxVu - minVu);
         float angle = minAngle + norm * (maxAngle - minAngle);
 
         bool isOverZero = (v > 0);
-        bool isMajor = (v == -20 || v == -10 || v == -5 || v == 0 || v == 3);
+        bool isMajor = (v == -20 || v == -15 || v == -12 || v == -10 || v == -5 || v == 0 || v == 3);
         float tickLen = isMajor ? (arcThickness * 0.6f) : (arcThickness * 0.35f);
 
         juce::Point<float> pOuter = pivot.getPointOnCircumference(radius + arcThickness * 0.5f, angle);
@@ -281,6 +299,21 @@ void VuMeterModule::drawDebugOverlay (juce::Graphics& g, juce::Rectangle<float> 
     g.drawText("Gold: Raw DSP (120ms True RMS)", juce::Rectangle<float>(plotRect.getX() + 4.0f, plotRect.getY() + 2.0f, 160.0f, 10.0f), juce::Justification::left, false);
     g.setColour(juce::Colour(0xff00e5ff));
     g.drawText("Cyan: Needle Angle (Direct 1:1, 0ms Lag)", juce::Rectangle<float>(plotRect.getX() + 170.0f, plotRect.getY() + 2.0f, 190.0f, 10.0f), juce::Justification::left, false);
+
+#if JUCE_DEBUG
+    // If a calibration test has been run, render the result summary below the plot
+    if (calResultString.isNotEmpty())
+    {
+        auto calArea = juce::Rectangle<float>(plotRect.getX(), plotRect.getBottom() + 2.0f,
+                                              plotRect.getWidth(), 36.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.75f));
+        g.fillRoundedRectangle(calArea, 3.0f);
+        g.setFont(FF360LabsLookAndFeel::getCustomFont(7.5f, juce::Font::plain));
+        g.setColour(ff360_labs::AccentGold);
+        g.drawFittedText(calResultString, calArea.toNearestInt().reduced(4, 2),
+                         juce::Justification::topLeft, 5);
+    }
+#endif
 }
 
 void VuMeterModule::paintModule(juce::Graphics& g)
@@ -313,6 +346,10 @@ void VuMeterModule::resizedModule()
     calibrationSelector.setBounds(topStrip.removeFromLeft(210));
     topStrip.removeFromLeft(6);
     debugButton.setBounds(topStrip.removeFromLeft(70));
+#if JUCE_DEBUG
+    topStrip.removeFromLeft(4);
+    calTestButton.setBounds(topStrip.removeFromLeft(76));
+#endif
 }
 
 

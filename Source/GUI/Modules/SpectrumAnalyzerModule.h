@@ -20,7 +20,17 @@ private:
     SpectrumData currentData;
     double currentSampleRate;
 
+    // Phase 10.5: FFT resolution selector in module header
+    juce::ComboBox fftResolutionCombo;
+
     float getLogX(float index, float numBins, float width);
+    void drawSpectrum(juce::Graphics& g,
+                      const std::vector<float>& magnitudes,
+                      juce::Rectangle<float> plotArea,
+                      float minDb, float rangeDb,
+                      juce::Colour lineColour,
+                      bool drawFill);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzerModule)
 };
+

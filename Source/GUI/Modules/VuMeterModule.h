@@ -4,6 +4,7 @@
 #include "../Common/MeterModule.h"
 #include "../../Core/AudioFifo.h"
 #include "../../DSP/VuDSP.h"
+#include "../../DSP/CalibrationTest.h"
 #include <vector>
 
 class VuMeterModule : public MeterModule, public juce::Timer
@@ -44,6 +45,12 @@ private:
     static constexpr size_t DEBUG_HISTORY_SIZE = 120; // 2 seconds @ 60 FPS
     std::vector<DebugSample> debugHistory;
     size_t debugWriteIndex = 0;
+
+#if JUCE_DEBUG
+    // Phase 10.7: Calibration test button — debug builds only
+    juce::TextButton calTestButton { "CAL TEST" };
+    juce::String     calResultString;
+#endif
 
     void drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bounds, float vuValue, const juce::String& channelLabel);
     void drawDebugOverlay (juce::Graphics& g, juce::Rectangle<float> bounds);

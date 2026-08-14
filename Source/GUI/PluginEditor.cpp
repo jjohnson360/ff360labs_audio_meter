@@ -8,85 +8,53 @@
 #endif
 
 FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p),
-      btnGridMode("Grid Mode"),
-      btnFocusMode("Focus Mode"),
-      btnExportReport("Export Report"),
-      btnColorblindMode("Accessible: OFF"),
-      btnAudioSettings("AUDIO I/O")
+    : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setLookAndFeel(&customLookAndFeel);
     
     addAndMakeVisible(meterDashboard);
-    addAndMakeVisible(perfBadge);
-    addAndMakeVisible(ioStatusBadge);
-    addAndMakeVisible(btnAudioSettings);
-    addAndMakeVisible(btnColorblindMode);
-    addAndMakeVisible(btnExportReport);
-    addAndMakeVisible(layoutComboBox);
-    addAndMakeVisible(addModuleComboBox);
-    addAndMakeVisible(btnGridMode);
-    addAndMakeVisible(btnFocusMode);
 
-    // Performance Badge Setup
-    perfBadge.setText("PERF: 60 FPS", juce::dontSendNotification);
-    perfBadge.setFont(FF360LabsLookAndFeel::getCustomFont(10.0f, juce::Font::bold));
-    perfBadge.setColour(juce::Label::textColourId, ff360_labs::AccentGold);
-    perfBadge.setJustificationType(juce::Justification::centred);
+    // --- Settings button ---
+    btnSettings.setTooltip("Settings & Options");
+    btnSettings.onClick = [this] { showSettingsMenu(); };
+    addAndMakeVisible(btnSettings);
 
-    // I/O Status Badge Setup
-    ioStatusBadge.setText("● LIVE I/O", juce::dontSendNotification);
-    ioStatusBadge.setFont(FF360LabsLookAndFeel::getCustomFont(10.0f, juce::Font::bold));
-    ioStatusBadge.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
-    ioStatusBadge.setJustificationType(juce::Justification::centred);
+    // --- Minimal status dots ---
+    ioStatusDot.setText(juce::CharPointer_UTF8("\xe2\x97\x8f"), juce::dontSendNotification); // ●
+    ioStatusDot.setFont(FF360LabsLookAndFeel::getCustomFont(11.0f, juce::Font::bold));
+    ioStatusDot.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
+    ioStatusDot.setJustificationType(juce::Justification::centred);
+    ioStatusDot.setTooltip("I/O Status: Live Input");
+    addAndMakeVisible(ioStatusDot);
 
-    btnAudioSettings.onClick = [this] {
-        openAudioSettings();
-    };
+    perfDot.setText(juce::CharPointer_UTF8("\xe2\x97\x8f"), juce::dontSendNotification); // ●
+    perfDot.setFont(FF360LabsLookAndFeel::getCustomFont(11.0f, juce::Font::bold));
+    perfDot.setColour(juce::Label::textColourId, ff360_labs::AccentGold);
+    perfDot.setJustificationType(juce::Justification::centred);
+    perfDot.setTooltip("Perf: 60 FPS");
+    addAndMakeVisible(perfDot);
 
-    // Colorblind Mode Attachment
-    btnColorblindMode.setClickingTogglesState(true);
-    colorblindAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-        audioProcessor.apvts, "colorblindMode", btnColorblindMode
-    );
-    
-    bool initCb = btnColorblindMode.getToggleState();
-    btnColorblindMode.setButtonText(initCb ? "Accessible: ON" : "Accessible: OFF");
-    FF360LabsLookAndFeel::setColorblindModeActive(initCb);
+    // --- Colorblind mode (state tracked internally, toggle lives in Settings menu) ---
+    colorblindModeActive = false;
+    {
+        // We need a temporary button as the attachment vehicle; attach & immediately discard the button
+        // Actually: read initial APVTS state directly
+        if (auto* param = audioProcessor.apvts.getParameter("colorblindMode"))
+        {
+            colorblindModeActive = (param->getValue() > 0.5f);
+            FF360LabsLookAndFeel::setColorblindModeActive(colorblindModeActive);
+        }
+    }
 
-    btnColorblindMode.onClick = [this] {
-        bool on = btnColorblindMode.getToggleState();
-        btnColorblindMode.setButtonText(on ? "Accessible: ON" : "Accessible: OFF");
-        FF360LabsLookAndFeel::setColorblindModeActive(on);
-        repaint();
-    };
-    
-    addModuleComboBox.setTextWhenNothingSelected("Add Module...");
+    // --- Add Module combo ---
+    addModuleComboBox.setTextWhenNothingSelected("+ Add Module");
     addModuleComboBox.addItem("Peak / RMS Meter", 1);
     addModuleComboBox.addItem("VU Meter", 2);
     addModuleComboBox.addItem("LUFS Meter", 3);
     addModuleComboBox.addItem("Spectrum Analyzer", 4);
     addModuleComboBox.addItem("Histogram (5 Min)", 5);
     addModuleComboBox.addItem("Phase Scope", 6);
-    
-    btnGridMode.setRadioGroupId(1001);
-    btnFocusMode.setRadioGroupId(1001);
-    btnGridMode.setClickingTogglesState(true);
-    btnFocusMode.setClickingTogglesState(true);
-    btnGridMode.setToggleState(true, juce::dontSendNotification);
-
-    btnGridMode.onClick = [this] {
-        btnGridMode.setToggleState(true, juce::dontSendNotification);
-        meterDashboard.setLayoutMode(LayoutMode::Grid);
-    };
-    btnFocusMode.onClick = [this] {
-        btnFocusMode.setToggleState(true, juce::dontSendNotification);
-        meterDashboard.setLayoutMode(LayoutMode::Maximized);
-    };
-
-    btnExportReport.onClick = [this] {
-        triggerExportReport();
-    };
+    addAndMakeVisible(addModuleComboBox);
     
     addModuleComboBox.onChange = [this] {
         int selectedId = addModuleComboBox.getSelectedId();
@@ -112,6 +80,7 @@ FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
     };
 
     populateLayoutPresets();
+    addAndMakeVisible(layoutComboBox);
 
     // Check if a saved active layout exists in APVTS state
     auto activeLayoutTree = audioProcessor.apvts.state.getChildWithName("ActiveLayout");
@@ -128,7 +97,6 @@ FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
 
     startTimerHz(4); // 4Hz performance budget and I/O status monitor
     
-    // Set a default size and allow resizing
     setResizable(true, true);
     setResizeLimits(900, 480, 2400, 1800);
     setSize(1120, 680);
@@ -162,35 +130,36 @@ void FF360MeterEditor::timerCallback()
             m->setThrottleMultiplier(multiplier);
     }
 
+    // Perf dot: gold = 60 FPS, amber = throttled
     if (multiplier < 1.0f)
     {
-        perfBadge.setText("PERF: 45 FPS", juce::dontSendNotification);
-        perfBadge.setColour(juce::Label::textColourId, FF360LabsLookAndFeel::getWarningColour());
+        perfDot.setColour(juce::Label::textColourId, FF360LabsLookAndFeel::getWarningColour());
+        perfDot.setTooltip("Perf: ~45 FPS (throttled \xe2\x80\x94 >6 modules active)");
     }
     else
     {
-        perfBadge.setText("PERF: 60 FPS", juce::dontSendNotification);
-        perfBadge.setColour(juce::Label::textColourId, ff360_labs::AccentGold);
+        perfDot.setColour(juce::Label::textColourId, ff360_labs::AccentGold);
+        perfDot.setTooltip("Perf: 60 FPS");
     }
 
-    // Input Signal & Device Activity Monitor
+    // I/O dot: cyan = live, amber = silent, red = no input
     bool isConnected = audioProcessor.getIsInputConnected();
-    bool isSilent = audioProcessor.getIsAudioSilent();
+    bool isSilent    = audioProcessor.getIsAudioSilent();
 
     if (!isConnected)
     {
-        ioStatusBadge.setText("● NO INPUT", juce::dontSendNotification);
-        ioStatusBadge.setColour(juce::Label::textColourId, ff360_labs::AccentAmberRed);
+        ioStatusDot.setColour(juce::Label::textColourId, ff360_labs::AccentAmberRed);
+        ioStatusDot.setTooltip("No input device connected");
     }
     else if (isSilent)
     {
-        ioStatusBadge.setText("● IDLE / SILENT", juce::dontSendNotification);
-        ioStatusBadge.setColour(juce::Label::textColourId, ff360_labs::AccentGold.withAlpha(0.8f));
+        ioStatusDot.setColour(juce::Label::textColourId, ff360_labs::AccentGold.withAlpha(0.8f));
+        ioStatusDot.setTooltip("Input connected — idle / silent");
     }
     else
     {
-        ioStatusBadge.setText("● LIVE I/O", juce::dontSendNotification);
-        ioStatusBadge.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
+        ioStatusDot.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
+        ioStatusDot.setTooltip("Live audio input active");
     }
 }
 
@@ -215,6 +184,130 @@ MeterModule* FF360MeterEditor::createModule (MeterModuleType type)
     }
 }
 
+void FF360MeterEditor::showSettingsMenu()
+{
+    juce::PopupMenu menu;
+
+    // --- Audio I/O ---
+    menu.addItem(1, "Audio I/O Settings...");
+
+    menu.addSeparator();
+
+    // --- Export ---
+    juce::PopupMenu exportSub;
+    exportSub.addItem(10, "Export Branded Report (HTML)...");
+    exportSub.addItem(11, "Export Spreadsheet (CSV)...");
+    menu.addSubMenu("Export Report", exportSub);
+
+    menu.addSeparator();
+
+    // --- Accessibility ---
+    menu.addItem(20, "Accessible Palette: " + juce::String(colorblindModeActive ? "ON" : "OFF"),
+                 true, colorblindModeActive);
+
+    menu.addSeparator();
+
+    // --- Layout Mode ---
+    bool isGrid = (meterDashboard.getLayoutMode() == LayoutMode::Grid);
+    menu.addItem(30, "Grid Mode",    true, isGrid);
+    menu.addItem(31, "Focus Mode",   true, !isGrid);
+
+    menu.addSeparator();
+
+    // --- UI Size ---
+    juce::PopupMenu sizeSub;
+    const std::pair<juce::String, float> sizes[] = {
+        { "50%",  0.50f }, { "75%",  0.75f }, { "100%", 1.00f },
+        { "125%", 1.25f }, { "150%", 1.50f }, { "175%", 1.75f }, { "200%", 2.00f }
+    };
+    int sizeId = 40;
+    for (auto& [label, factor] : sizes)
+        sizeSub.addItem(sizeId++, label);
+    menu.addSubMenu("UI Size", sizeSub);
+
+    // --- Full Screen (standalone only) ---
+   #if JucePlugin_Build_Standalone
+    menu.addSeparator();
+    menu.addItem(50, "Full Screen");
+   #endif
+
+    menu.addSeparator();
+    menu.addItem(99, "About ff360_labs Meter...");
+
+    auto options = juce::PopupMenu::Options()
+                       .withTargetComponent(&btnSettings)
+                       .withMaximumNumColumns(1);
+
+    menu.showMenuAsync(options, [this](int result)
+    {
+        if (result == 1)
+        {
+            openAudioSettings();
+        }
+        else if (result == 10)
+        {
+            triggerExportReport(false);
+        }
+        else if (result == 11)
+        {
+            triggerExportReport(true);
+        }
+        else if (result == 20)
+        {
+            // Toggle colorblind mode
+            colorblindModeActive = !colorblindModeActive;
+            FF360LabsLookAndFeel::setColorblindModeActive(colorblindModeActive);
+            if (auto* param = audioProcessor.apvts.getParameter("colorblindMode"))
+                param->setValueNotifyingHost(colorblindModeActive ? 1.0f : 0.0f);
+            repaint();
+        }
+        else if (result == 30)
+        {
+            meterDashboard.setLayoutMode(LayoutMode::Grid);
+        }
+        else if (result == 31)
+        {
+            meterDashboard.setLayoutMode(LayoutMode::Maximized);
+        }
+        else if (result >= 40 && result <= 46)
+        {
+            // UI Size: scale the window from the 1120x680 base size (Phase 5.7 compatible)
+            const float factors[] = { 0.50f, 0.75f, 1.00f, 1.25f, 1.50f, 1.75f, 2.00f };
+            float factor = factors[result - 40];
+            int newW = juce::roundToInt(1120.0f * factor);
+            int newH = juce::roundToInt(680.0f  * factor);
+            setSize(newW, newH);
+        }
+       #if JucePlugin_Build_Standalone
+        else if (result == 50)
+        {
+            if (auto* peer = getPeer())
+                peer->setFullScreen(!peer->isFullScreen());
+        }
+       #endif
+        else if (result == 99)
+        {
+            showAboutDialog();
+        }
+    });
+}
+
+void FF360MeterEditor::showAboutDialog()
+{
+    juce::String version = juce::String("Beta v") + JucePlugin_VersionString
+                         + " (" + juce::String(__DATE__) + ")";
+
+    juce::String msg = "ff360_labs Modular Audio Metering Plugin\n\n"
+                     + version + "\n\n"
+                     "Phases 0-10 complete.\n"
+                     "Built with JUCE.\n\n"
+                     "(c) ff360_labs";
+
+    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                           "About ff360_labs Meter",
+                                           msg, "Close");
+}
+
 void FF360MeterEditor::openAudioSettings()
 {
     AudioSettingsModal::showModal(this, audioProcessor, getStandaloneDeviceManager());
@@ -229,63 +322,48 @@ juce::AudioDeviceManager* FF360MeterEditor::getStandaloneDeviceManager()
     return nullptr;
 }
 
-
-void FF360MeterEditor::triggerExportReport()
+void FF360MeterEditor::triggerExportReport(bool csvMode)
 {
-    // Retrieve target profile from APVTS or default
     int targetIdx = 0;
     if (auto* param = audioProcessor.apvts.getParameter("targetProfile"))
-    {
         targetIdx = (int)param->getValue() * (int)(ff360_labs::LoudnessTarget::getBuiltinPresets().size() - 1);
-    }
     auto targetProfile = ff360_labs::LoudnessTarget::getPresetByIndex(targetIdx);
 
-    // Retrieve active DSP measurements
     float integrated = audioProcessor.lufsDSP.getIntegrated();
-    float lra = audioProcessor.lufsDSP.getLRA();
-    float shortTerm = audioProcessor.lufsDSP.getShortTerm();
-    float momentary = audioProcessor.lufsDSP.getMomentary();
-    float peakL = -60.0f;
-    float peakR = -60.0f;
+    float lra        = audioProcessor.lufsDSP.getLRA();
+    float shortTerm  = audioProcessor.lufsDSP.getShortTerm();
+    float momentary  = audioProcessor.lufsDSP.getMomentary();
 
-    auto data = ff360_labs::SessionReportData::collect(targetProfile, integrated, lra, shortTerm, momentary, peakL, peakR);
+    auto data = ff360_labs::SessionReportData::collect(targetProfile, integrated, lra, shortTerm, momentary, -60.0f, -60.0f);
 
-    juce::PopupMenu menu;
-    menu.addItem(1, "Export as Branded Report (HTML / PDF-Ready)...");
-    menu.addItem(2, "Export as Spreadsheet (CSV)...");
-
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&btnExportReport),
-        [this, data](int result) {
-            if (result == 1)
-            {
-                fileChooser = std::make_unique<juce::FileChooser>(
-                    "Save Mastering Report",
-                    juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("ff360labs_session_report.html"),
-                    "*.html"
-                );
-                auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
-                fileChooser->launchAsync(flags, [data](const juce::FileChooser& fc) {
-                    auto file = fc.getResult();
-                    if (file != juce::File{})
-                        data.exportHtml(file);
-                });
-            }
-            else if (result == 2)
-            {
-                fileChooser = std::make_unique<juce::FileChooser>(
-                    "Save Loudness CSV Data",
-                    juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("ff360labs_session_data.csv"),
-                    "*.csv"
-                );
-                auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
-                fileChooser->launchAsync(flags, [data](const juce::FileChooser& fc) {
-                    auto file = fc.getResult();
-                    if (file != juce::File{})
-                        data.exportCsv(file);
-                });
-            }
-        }
-    );
+    if (!csvMode)
+    {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Save Mastering Report",
+            juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("ff360labs_session_report.html"),
+            "*.html");
+        auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                   | juce::FileBrowserComponent::warnAboutOverwriting;
+        fileChooser->launchAsync(flags, [data](const juce::FileChooser& fc) {
+            auto file = fc.getResult();
+            if (file != juce::File{})
+                data.exportHtml(file);
+        });
+    }
+    else
+    {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Save Loudness CSV Data",
+            juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("ff360labs_session_data.csv"),
+            "*.csv");
+        auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                   | juce::FileBrowserComponent::warnAboutOverwriting;
+        fileChooser->launchAsync(flags, [data](const juce::FileChooser& fc) {
+            auto file = fc.getResult();
+            if (file != juce::File{})
+                data.exportCsv(file);
+        });
+    }
 }
 
 void FF360MeterEditor::populateLayoutPresets()
@@ -294,9 +372,7 @@ void FF360MeterEditor::populateLayoutPresets()
     
     const auto& factory = ff360_labs::DashboardLayout::getFactoryPresets();
     for (size_t i = 0; i < factory.size(); ++i)
-    {
         layoutComboBox.addItem("Layout: " + factory[i].name, (int)i + 1);
-    }
     
     auto userLayoutsTree = audioProcessor.apvts.state.getChildWithName("UserLayouts");
     if (userLayoutsTree.isValid() && userLayoutsTree.getNumChildren() > 0)
@@ -316,33 +392,29 @@ void FF360MeterEditor::populateLayoutPresets()
         int id = layoutComboBox.getSelectedId();
         if (id >= 1 && id <= 4)
         {
-            const auto& factory = ff360_labs::DashboardLayout::getFactoryPresets();
-            loadLayout(factory[(size_t)(id - 1)]);
+            const auto& f = ff360_labs::DashboardLayout::getFactoryPresets();
+            loadLayout(f[(size_t)(id - 1)]);
         }
         else if (id >= 100 && id < 900)
         {
             auto userLayoutsTree = audioProcessor.apvts.state.getChildWithName("UserLayouts");
             int userIdx = id - 100;
             if (userLayoutsTree.isValid() && userIdx < userLayoutsTree.getNumChildren())
-            {
                 loadLayout(ff360_labs::DashboardLayout::fromValueTree(userLayoutsTree.getChild(userIdx)));
-            }
         }
         else if (id == 999)
         {
-            auto* alert = new juce::AlertWindow ("Save Custom Layout", "Enter a name for the current dashboard layout:", juce::AlertWindow::QuestionIcon);
-            alert->addTextEditor ("layoutName", "Custom Layout", "Layout Name:");
-            alert->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey, 0, 0));
-            alert->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey, 0, 0));
-            alert->enterModalState (true, juce::ModalCallbackFunction::create ([this, alert] (int result)
+            auto* alert = new juce::AlertWindow("Save Custom Layout", "Enter a name for the current dashboard layout:", juce::AlertWindow::QuestionIcon);
+            alert->addTextEditor("layoutName", "Custom Layout", "Layout Name:");
+            alert->addButton("Save",   1, juce::KeyPress(juce::KeyPress::returnKey, 0, 0));
+            alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey, 0, 0));
+            alert->enterModalState(true, juce::ModalCallbackFunction::create([this, alert](int result)
             {
                 if (result == 1)
                 {
-                    juce::String name = alert->getTextEditorContents ("layoutName").trim();
+                    juce::String name = alert->getTextEditorContents("layoutName").trim();
                     if (name.isNotEmpty())
-                    {
-                        saveCurrentLayout (name);
-                    }
+                        saveCurrentLayout(name);
                 }
                 populateLayoutPresets();
             }));
@@ -366,12 +438,7 @@ void FF360MeterEditor::loadLayout (const ff360_labs::DashboardLayout& layout)
     }
     
     meterDashboard.setLayoutMode(layout.mode);
-    if (layout.mode == LayoutMode::Grid)
-        btnGridMode.setToggleState(true, juce::dontSendNotification);
-    else
-        btnFocusMode.setToggleState(true, juce::dontSendNotification);
 
-    // Update active layout in state
     auto existingActive = audioProcessor.apvts.state.getChildWithName("ActiveLayout");
     if (existingActive.isValid())
         audioProcessor.apvts.state.removeChild(existingActive, nullptr);
@@ -405,7 +472,7 @@ ff360_labs::DashboardLayout FF360MeterEditor::getCurrentDashboardLayout() const
 
 void FF360MeterEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (ff360_labs::BackgroundDark);
+    g.fillAll(ff360_labs::BackgroundDark);
 
     // Header Bar
     auto headerRect = getLocalBounds().removeFromTop(40).toFloat();
@@ -417,15 +484,15 @@ void FF360MeterEditor::paint (juce::Graphics& g)
     g.drawHorizontalLine((int)headerRect.getBottom() - 1, headerRect.getX(), headerRect.getRight());
 
     // Brand Title
-    g.setFont (FF360LabsLookAndFeel::getCustomFont(15.0f, juce::Font::bold));
-    g.setColour (ff360_labs::AccentGold);
-    g.drawText ("ff360_labs", headerRect.toNearestInt().withTrimmedLeft(20), juce::Justification::centredLeft, true);
+    g.setFont(FF360LabsLookAndFeel::getCustomFont(15.0f, juce::Font::bold));
+    g.setColour(ff360_labs::AccentGold);
+    g.drawText("ff360_labs", headerRect.toNearestInt().withTrimmedLeft(20), juce::Justification::centredLeft, true);
     
-    g.setColour (ff360_labs::TextMuted);
-    g.drawText (" // ", headerRect.toNearestInt().withTrimmedLeft(110), juce::Justification::centredLeft, true);
+    g.setColour(ff360_labs::TextMuted);
+    g.drawText(" // ", headerRect.toNearestInt().withTrimmedLeft(110), juce::Justification::centredLeft, true);
 
-    g.setColour (ff360_labs::TextOffWhite);
-    g.drawText ("MODULAR METER", headerRect.toNearestInt().withTrimmedLeft(135), juce::Justification::centredLeft, true);
+    g.setColour(ff360_labs::TextOffWhite);
+    g.drawText("MODULAR METER", headerRect.toNearestInt().withTrimmedLeft(135), juce::Justification::centredLeft, true);
 }
 
 void FF360MeterEditor::resized()
@@ -433,15 +500,14 @@ void FF360MeterEditor::resized()
     auto bounds = getLocalBounds();
     auto headerRect = bounds.removeFromTop(40);
     
-    btnGridMode.setBounds(headerRect.removeFromRight(84).reduced(3, 6));
-    btnFocusMode.setBounds(headerRect.removeFromRight(84).reduced(3, 6));
-    btnColorblindMode.setBounds(headerRect.removeFromRight(115).reduced(3, 6));
-    btnExportReport.setBounds(headerRect.removeFromRight(105).reduced(3, 6));
-    btnAudioSettings.setBounds(headerRect.removeFromRight(95).reduced(3, 6));
-    addModuleComboBox.setBounds(headerRect.removeFromRight(130).reduced(3, 6));
-    layoutComboBox.setBounds(headerRect.removeFromRight(145).reduced(3, 6));
-    perfBadge.setBounds(headerRect.removeFromRight(90).reduced(3, 6));
-    ioStatusBadge.setBounds(headerRect.removeFromRight(110).reduced(3, 6));
+    // Right-to-left: status dots, then combos, then settings button
+    ioStatusDot.setBounds(headerRect.removeFromRight(18).reduced(0, 8));
+    perfDot.setBounds(headerRect.removeFromRight(18).reduced(0, 8));
+    headerRect.removeFromRight(4); // gap before combos
+    addModuleComboBox.setBounds(headerRect.removeFromRight(140).reduced(3, 6));
+    layoutComboBox.setBounds(headerRect.removeFromRight(150).reduced(3, 6));
+    headerRect.removeFromRight(4);
+    btnSettings.setBounds(headerRect.removeFromRight(36).reduced(3, 6));
     
     meterDashboard.setBounds(bounds.reduced(8));
 }

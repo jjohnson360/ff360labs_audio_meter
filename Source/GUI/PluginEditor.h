@@ -35,24 +35,27 @@ private:
     MeterDashboard meterDashboard;
     juce::OwnedArray<MeterModule> dynamicModules;
 
-    juce::TextButton btnGridMode;
-    juce::TextButton btnFocusMode;
-    juce::TextButton btnExportReport;
-    juce::TextButton btnColorblindMode;
-    juce::TextButton btnAudioSettings;
-    juce::Label perfBadge;
-    juce::Label ioStatusBadge;
-    juce::ComboBox layoutComboBox;
-    juce::ComboBox addModuleComboBox;
+    // Nav bar — consolidated (Phase 10.1)
+    juce::TextButton btnSettings { juce::CharPointer_UTF8("\xe2\x9a\x99") }; // ⚙ gear
+    juce::Label      ioStatusDot;   // minimal ● dot (colour encodes state)
+    juce::Label      perfDot;       // minimal ● dot (colour encodes perf state)
+    juce::ComboBox   layoutComboBox;
+    juce::ComboBox   addModuleComboBox;
+
+    // APVTS attachment for colorblind mode (still needed even though button is in menu)
+    bool colorblindModeActive = false;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> colorblindAttachment;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> colorblindAttachment;
 
     MeterModule* createModule (MeterModuleType type);
     void populateLayoutPresets();
-    void triggerExportReport();
+    void triggerExportReport(bool csvMode);
     void openAudioSettings();
+    void showSettingsMenu();
+    void showAboutDialog();
     juce::AudioDeviceManager* getStandaloneDeviceManager();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FF360MeterEditor)
 };
+

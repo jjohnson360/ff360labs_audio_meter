@@ -22,14 +22,30 @@ void PhaseScopeModule::timerCallback()
     while (meterFifo.pull(newData))
     {
         currentData.correlation = newData.correlation;
-        currentData.samplePairs.insert(currentData.samplePairs.end(), newData.samplePairs.begin(), newData.samplePairs.end());
+        currentData.samplePairs.insert(currentData.samplePairs.end(),
+                                        newData.samplePairs.begin(),
+                                        newData.samplePairs.end());
         hasNewData = true;
     }
+    
+    // Hard cap: prevent unbounded accumulation on WASAPI where updateScopeImage()
+    // may bail early on first frames (zero-size bounds), causing the vector to grow
+    // indefinitely and the display to stall. Keep only the newest samples.
+    static constexpr size_t MaxAccumulatedPairs = 8192;
+    if (currentData.samplePairs.size() > MaxAccumulatedPairs)
+        currentData.samplePairs.erase(currentData.samplePairs.begin(),
+                                       currentData.samplePairs.begin() +
+                                       static_cast<ptrdiff_t>(currentData.samplePairs.size() - MaxAccumulatedPairs));
     
     if (hasNewData)
     {
         repaint();
     }
+    // NOTE: do NOT clear samplePairs here.
+    // repaint() is async — it schedules a paint for the next message loop tick.
+    // Clearing here empties the vector before updateScopeImage() ever runs.
+    // The clear is performed inside updateScopeImage() after drawing completes.
+    // The 8192-pair cap above is sufficient to prevent runaway accumulation.
 }
 
 void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
@@ -37,7 +53,14 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
     int w = juce::roundToInt(bounds.getWidth());
     int h = juce::roundToInt(bounds.getHeight());
     
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0)
+    {
+        // Bounds not yet valid (common on first WASAPI frames).
+        // Clear the vector here so it cannot accumulate while we wait —
+        // the cap in timerCallback() is backup; this is the primary drain.
+        currentData.samplePairs.clear();
+        return;
+    }
     
     if (scopeImage.getWidth() != w || scopeImage.getHeight() != h)
     {
@@ -46,8 +69,8 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
     
     juce::Graphics g(scopeImage);
     
-    // Smooth Fading persistence
-    scopeImage.multiplyAllAlphas(0.82f);
+    // Smooth fading persistence — 0.75f gives a snappier trail than the previous 0.82f
+    scopeImage.multiplyAllAlphas(0.75f);
     
     if (currentData.samplePairs.empty())
         return;
@@ -59,7 +82,7 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
     size_t totalPoints = currentData.samplePairs.size();
     if (totalPoints < 2)
     {
-        currentData.samplePairs.clear();
+        // Don't clear here — timerCallback handles the clear unconditionally
         return;
     }
 
@@ -89,7 +112,9 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
         g.setColour(ff360_labs::AccentGold.withAlpha(alpha));
         g.drawLine(p1x, p1y, p2x, p2y, 1.4f);
     }
-    
+
+    // Clear after drawing. Must happen here — after updateScopeImage() has consumed
+    // the data — not in timerCallback() where repaint() hasn't fired yet.
     currentData.samplePairs.clear();
 }
 

@@ -49,6 +49,11 @@ public:
 
     static float gainToVuDb(float linearGain);
 
+    // Returns the mathematically expected VU reading for a sine wave with the given peak level.
+    // sinePeakDbfs: peak of the sine in dBFS (e.g. -20.0f for a -20 dBFS sine)
+    // refLevelDb:   reference level where 0 VU is defined (e.g. -18.0f)
+    static float getExpectedVuForSinePeak(float sinePeakDbfs, float refLevelDb);
+
 private:
     double currentSampleRate = 48000.0;
     float referenceLevelDb = -18.0f;

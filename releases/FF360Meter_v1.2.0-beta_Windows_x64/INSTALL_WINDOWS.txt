@@ -1,0 +1,16 @@
+﻿ff360_labs Modular Audio Meter — Beta v1.2.0
+Windows 10/11 (x64) Installation
+
+1. Copy FF360Meter.vst3\ to:
+   C:\Program Files\Common Files\VST3\
+
+2. Restart your DAW and scan for new plugins.
+
+3. To run standalone: launch FF360Meter.exe
+
+4. For system audio monitoring:
+   Open the plugin > Settings (⚙) > Audio I/O Settings
+   Select 'Stereo Mix' or a WASAPI loopback device as the Input.
+
+BETA NOTICE: This is pre-release software.
+Report issues at: https://github.com/jjohnson360/ff360labs_audio_meter

@@ -66,9 +66,11 @@ void AudioSettingsModal::inspectPlatformLoopback()
     }
 
    #if JUCE_WINDOWS
-    osGuidanceText = "WINDOWS WASAPI / SYSTEM AUDIO:\n"
-                     "Select 'Windows Audio (WASAPI)' or 'DirectSound'. To monitor desktop audio, choose 'Stereo Mix' "
-                     "or a virtual loopback endpoint (e.g. VB-Cable / Virtual Audio Cable) as the Input Device.";
+    osGuidanceText = "WINDOWS WASAPI / SYSTEM AUDIO (Phase 9.3 \xe2\x80\x94 confirmed):\n"
+                     "Select 'Windows Audio (WASAPI)' or 'DirectSound' as the device type. "
+                     "To monitor desktop audio (WASAPI Loopback), choose 'Stereo Mix' "
+                     "or a virtual loopback endpoint (e.g. VB-Cable / Virtual Audio Cable) as the Input Device. "
+                     "Access this screen via the \xe2\x9a\x99 Settings menu in the top nav bar.";
    #elif JUCE_MAC
     osGuidanceText = "macOS SYSTEM AUDIO CAPTURE:\n"
                      "macOS requires an audio routing driver to capture desktop output. Install BlackHole (2ch) or Rogue Amoeba Loopback, "

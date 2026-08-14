@@ -41,12 +41,14 @@ public:
 private:
     juce::String moduleName;
     MeterModuleType moduleType;
-    juce::TextButton closeButton{ "X" };
-    juce::TextButton maximizeButton{ "[ ]" };
-    juce::TextButton detachButton{ "[^]" };
+
+    // Single kebab/options menu button replaces the three individual header buttons (Phase 10.2)
+    juce::TextButton menuButton{ "\xe2\x8b\xae" }; // Unicode ellipsis ⋮ (vertical three dots)
+    void showModuleMenu();
     
     static constexpr int headerHeight = 24;
     static constexpr int padding = 4;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MeterModule)
 };
+

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(FF360Meter VERSION 1.0.0)
+project(FF360Meter VERSION 1.2.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,7 @@ target_sources(FF360Meter
         Source/DSP/SpectrumDSP.cpp
         Source/DSP/HistogramDSP.h
         Source/DSP/HistogramDSP.cpp
+        Source/DSP/CalibrationTest.h
         Source/GUI/PluginEditor.h
         Source/GUI/PluginEditor.cpp
         Source/GUI/LookAndFeel/FF360LabsLookAndFeel.h

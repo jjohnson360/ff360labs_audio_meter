@@ -95,9 +95,10 @@ void PeakRmsMeterModule::drawMeterLane(juce::Graphics& g, juce::Rectangle<float>
         }
         else
         {
-            // Unlit segment: Faintly visible charcoal-gold so scale remains clear
-            g.setColour(isWarning ? ff360_labs::AccentAmberRed.withAlpha(0.08f)
-                                  : ff360_labs::AccentGold.withAlpha(0.06f));
+            // Unlit segment: single constant controls opacity — halved in Phase 10.6 for cleaner readability
+            static constexpr float kUnlitAlpha = 0.03f;
+            g.setColour(isWarning ? ff360_labs::AccentAmberRed.withAlpha(kUnlitAlpha * 1.33f)
+                                  : ff360_labs::AccentGold.withAlpha(kUnlitAlpha));
             g.fillRoundedRectangle(segRect, 1.5f);
         }
     }

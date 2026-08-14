@@ -1,0 +1,22 @@
+﻿ff360_labs Modular Audio Meter -- Beta v1.2.1
+macOS 12+ (Universal Binary: Apple Silicon + Intel)
+
+CHANGES FROM v1.2.0
+- REGRESSION FIX: Phase Scope now displays correctly
+
+NOTARIZATION NOT APPLIED (Beta)
+macOS Gatekeeper will block on first launch.
+System Settings > Privacy & Security > Open Anyway
+
+INSTALLATION
+VST3:        /Library/Audio/Plug-Ins/VST3/
+Audio Unit:  /Library/Audio/Plug-Ins/Components/
+Standalone:  /Applications/
+
+SYSTEM AUDIO: Install BlackHole 2ch, create Multi-Output Device,
+select BlackHole as Input in Settings (gear) > Audio I/O Settings.
+
+NOTE: True Universal Binary requires macOS-native compilation.
+This beta package uses the x64 VST3 from the Windows build.
+
+BETA: Pre-release software. Report issues at https://github.com/jjohnson360/ff360labs_audio_meter
