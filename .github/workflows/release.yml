@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: Build Windows 11 (x64)
@@ -29,16 +32,17 @@ jobs:
       - name: Package Windows Artifacts
         shell: pwsh
         run: |
+          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v1.1.0" }
           New-Item -ItemType Directory -Force -Path package_win
           Copy-Item -Path "build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3" -Destination "package_win/" -Recurse
           Copy-Item -Path "build/FF360Meter_artefacts/Release/Standalone/FF360Meter.exe" -Destination "package_win/"
-          Compress-Archive -Path "package_win/*" -DestinationPath "FF360Meter_v1.0.0_Windows_x64.zip"
+          Compress-Archive -Path "package_win/*" -DestinationPath "FF360Meter_${tag}_Windows_x64.zip"
 
       - name: Upload Windows Asset
         uses: actions/upload-artifact@v4
         with:
-          name: FF360Meter_v1.0.0_Windows_x64
-          path: FF360Meter_v1.0.0_Windows_x64.zip
+          name: Windows_x64_Package
+          path: "*.zip"
 
   build-macos:
     name: Build macOS 12+ (Universal Binary)
@@ -61,17 +65,18 @@ jobs:
 
       - name: Package macOS Artifacts
         run: |
+          TAG="${GITHUB_REF_NAME:-v1.1.0}"
           mkdir -p package_mac
           cp -R build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3 package_mac/ || true
           cp -R build/FF360Meter_artefacts/Release/AU/FF360Meter.component package_mac/ || true
           cp -R build/FF360Meter_artefacts/Release/Standalone/FF360Meter.app package_mac/ || true
-          cd package_mac && zip -r ../FF360Meter_v1.0.0_macOS_Universal.zip . && cd ..
+          cd package_mac && zip -r "../FF360Meter_${TAG}_macOS_Universal.zip" . && cd ..
 
       - name: Upload macOS Asset
         uses: actions/upload-artifact@v4
         with:
-          name: FF360Meter_v1.0.0_macOS_Universal
-          path: FF360Meter_v1.0.0_macOS_Universal.zip
+          name: macOS_Universal_Package
+          path: "*.zip"
 
   create-release:
     name: Publish GitHub Release
@@ -83,22 +88,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Windows Artifact
+      - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: FF360Meter_v1.0.0_Windows_x64
-
-      - name: Download macOS Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: FF360Meter_v1.0.0_macOS_Universal
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            FF360Meter_v1.0.0_Windows_x64.zip
-            FF360Meter_v1.0.0_macOS_Universal.zip
+          files: "*.zip"
           body_path: FF360LABS_AUDIO_METER_PROGRESS_REPORT.md
           draft: false
           prerelease: false
+
