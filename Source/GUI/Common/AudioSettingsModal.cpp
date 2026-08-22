@@ -23,6 +23,8 @@ AudioSettingsModal::AudioSettingsModal(FF360MeterProcessor& processor, juce::Aud
 
     addAndMakeVisible(btnClose);
     btnClose.onClick = [this] {
+        if (onClose)
+            onClose();
         if (auto* parent = getParentComponent())
             parent->removeChildComponent(this);
     };
@@ -173,11 +175,12 @@ void AudioSettingsModal::resized()
         deviceSelector->setBounds(bounds.reduced(10));
 }
 
-void AudioSettingsModal::showModal(juce::Component* parent, FF360MeterProcessor& processor, juce::AudioDeviceManager* deviceManager)
+void AudioSettingsModal::showModal(juce::Component* parent, FF360MeterProcessor& processor, juce::AudioDeviceManager* deviceManager, std::function<void()> onClosed)
 {
     if (parent == nullptr) return;
 
     auto* modal = new AudioSettingsModal(processor, deviceManager);
+    modal->onClose = std::move(onClosed);
     modal->setBounds(parent->getLocalBounds());
     parent->addAndMakeVisible(modal);
 }

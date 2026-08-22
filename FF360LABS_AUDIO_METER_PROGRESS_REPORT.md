@@ -1,8 +1,8 @@
-﻿# ff360_labs Modular Audio Meter — Progress & Release Report
+# ff360_labs Modular Audio Meter — Progress & Release Report
 
 **Project**: `ff360labs_audio_meter`  
-**Version**: `Beta v1.2.1`  
-**Release Date & Time**: `August 14, 2026 — 07:23 CDT`  
+**Version**: `Beta v1.2.2`  
+**Release Date & Time**: `August 22, 2026`  
 **Author / Organization**: `ff360 Labs` (`jjohnson360`)  
 **Target Platforms**: Windows 10/11 (x64) & macOS 12+ (Universal Binary: Apple Silicon / Intel)  
 **Build Status**: ✅ Clean — MSVC 2022 Release, exit code 0, zero errors
@@ -11,13 +11,28 @@
 
 ## Executive Summary
 
-The **ff360_labs Modular Audio Meter** is a pre-release beta of an extensible, hardware-styled audio analysis and mastering suite built with **C++20** and **JUCE 8.0.4**. Beta v1.2.1 closes Phase 10 — a dedicated calibration audit, platform stability, and UI consolidation sprint.
-
-**Two critical DSP accuracy bugs were discovered and resolved in this release**, bringing all meter readings into full mathematical alignment with reference sine-tone expectations (±0.25 dB tolerance).
+The **ff360_labs Modular Audio Meter** is an extensible, hardware-styled audio analysis and mastering suite built with **C++20** and **JUCE 8.0.4**. Beta v1.2.2 delivers **Phase 11** — silence diagnosis, real-time internal calibrated reference generator (DEV OSC), standalone input device selector dropdown, vector-rendered module header kebab icons, and the Max for Live cross-application companion specification.
 
 ---
 
 ## Phase-by-Phase Development Log
+
+### Phase 11: Silence Diagnosis, Icon Fix & M4L Cross-Application ← **CURRENT**
+
+#### 11.1 — Real-Time DEV OSC Reference Generator & Silence Diagnosis
+- **Internal 1 kHz Sine Tone**: Synthesized in `FF360MeterProcessor::processBlock` at -18 dBFS (0.12589 amp) when enabled, driving all meters to calibrated target levels.
+- **Top Nav Bar DEV OSC Toggle**: Gold-illuminated toggle button providing immediate, self-contained verification of the entire DSP and FIFO rendering pipeline without external audio files or DAW tracks.
+- **Audio Input Device Selector Dropdown**: Top bar dropdown in Standalone mode allowing instant switching and live re-initialization of audio endpoints and loopback devices (`AudioDeviceManager`).
+- **4-State I/O Status Badge**: Distinguishes between DEV OSC Active (🟣), No Hardware Input Device (🔴), Input Connected & Silent (🟡), and Live Audio Streaming (🟢) with live peak dB display.
+
+#### 11.2 — Module Header Vector Icon Encoding Fix
+- **Vector-Rendered Kebab Button**: Replaced string-literal text buttons with native vector-rendered `KebabMenuButton` (`fillEllipse`), eliminating multi-byte encoding corruption (`â‹®`) and font glyph mismatch issues.
+- **MSVC `/utf-8` Support**: Added `/utf-8` compiler flags in `CMakeLists.txt` to enforce UTF-8 execution character sets.
+
+#### 11.3–11.6 — Max for Live Companion Specification
+- Created `M4L_Accurate_Metering_Guidelines.md` detailing built-in `[cycle~]` reference tone routing, dynamic `[adstatus sr]` sample-rate scaling for 44.1/48/96 kHz, BS.1770-4 dual-gate LRA rules (-10 LU relative), and visual silence detection.
+
+---
 
 ### Phase 0 & 1: Core Architecture & Brand Identity
 - **Lock-Free Concurrency**: Implemented SPSC circular `AudioFifo` channels isolating realtime DSP threads from 60 FPS GUI rendering.
@@ -61,7 +76,6 @@ The **ff360_labs Modular Audio Meter** is a pre-release beta of an extensible, h
 - **9.1 VU Double-Smoothing Resolution**: Eliminated secondary SpringDamper latency; direct 1:1 rotation from DSP values. Replaced rectified peak with true continuous windowed RMS power integration.
 - **9.2 Adjustable VU Reference**: APVTS-backed calibration combobox with presets: −18 dBFS (SMPTE), −20 dBFS (EBU), −14 dBFS (Streaming), −12 dBFS (Commercial), −10 dBFS (Club).
 - **9.3 Standalone Loopback Capture**: `AudioSettingsModal` wrapping `juce::AudioDeviceSelectorComponent`, real-time I/O status badge, OS-specific loopback routing guides and device detection.
-
 
 ### Phase 10.4 Hotfix -- Phase Scope Regression (Beta v1.2.1)
 

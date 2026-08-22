@@ -33,7 +33,7 @@ private:
     float currentRefLevelDb = -18.0f;
 
     // Phase 9.1: Dev Debug Overlay
-    juce::TextButton debugButton { "DEV OSC" };
+    juce::TextButton debugButton { "OVERLAY" };
     bool showDebugOverlay = false;
 
     struct DebugSample

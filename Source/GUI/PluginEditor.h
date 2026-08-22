@@ -35,12 +35,14 @@ private:
     MeterDashboard meterDashboard;
     juce::OwnedArray<MeterModule> dynamicModules;
 
-    // Nav bar — consolidated (Phase 10.1)
+    // Nav bar — consolidated & diagnostic (Phase 10.1 & 11.1)
+    juce::TextButton btnDevOsc { "DEV OSC" };
+    juce::ComboBox   inputDeviceComboBox;
+    juce::ComboBox   addModuleComboBox;
+    juce::ComboBox   layoutComboBox;
     juce::TextButton btnSettings { juce::CharPointer_UTF8("\xe2\x9a\x99") }; // ⚙ gear
     juce::Label      ioStatusDot;   // minimal ● dot (colour encodes state)
     juce::Label      perfDot;       // minimal ● dot (colour encodes perf state)
-    juce::ComboBox   layoutComboBox;
-    juce::ComboBox   addModuleComboBox;
 
     // APVTS attachment for colorblind mode (still needed even though button is in menu)
     bool colorblindModeActive = false;
@@ -50,6 +52,7 @@ private:
 
     MeterModule* createModule (MeterModuleType type);
     void populateLayoutPresets();
+    void updateInputDeviceList();
     void triggerExportReport(bool csvMode);
     void openAudioSettings();
     void showSettingsMenu();

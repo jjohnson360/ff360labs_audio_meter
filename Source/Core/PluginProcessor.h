@@ -74,10 +74,16 @@ public:
     bool getIsAudioSilent() const { return isAudioSilent.load(); }
     float getCurrentPeakLevelDb() const { return currentPeakLevelDb.load(); }
 
+    // Phase 11: DEV OSC Calibrated Reference Generator
+    bool isDevOscEnabled() const { return devOscEnabled.load(); }
+    void setDevOscEnabled(bool enabled) { devOscEnabled.store(enabled); }
+
 private:
     std::atomic<bool> isInputConnected { false };
     std::atomic<bool> isAudioSilent { true };
     std::atomic<float> currentPeakLevelDb { -100.0f };
+    std::atomic<bool> devOscEnabled { false };
+    double oscPhase = 0.0;
 
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     

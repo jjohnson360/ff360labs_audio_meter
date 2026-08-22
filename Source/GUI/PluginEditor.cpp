@@ -46,6 +46,24 @@ FF360MeterEditor::FF360MeterEditor (FF360MeterProcessor& p)
         }
     }
 
+    // --- DEV OSC Button (Phase 11.1) ---
+    btnDevOsc.setClickingTogglesState(true);
+    btnDevOsc.setTooltip("DEV OSC: Inject Calibrated 1 kHz Sine (-18 dBFS) Reference Tone");
+    btnDevOsc.setColour(juce::TextButton::buttonColourId, ff360_labs::ContainerDark);
+    btnDevOsc.setColour(juce::TextButton::buttonOnColourId, ff360_labs::AccentGold.withAlpha(0.35f));
+    btnDevOsc.setColour(juce::TextButton::textColourOffId, ff360_labs::AccentGold);
+    btnDevOsc.setColour(juce::TextButton::textColourOnId, ff360_labs::TextOffWhite);
+    btnDevOsc.onClick = [this] {
+        bool active = btnDevOsc.getToggleState();
+        audioProcessor.setDevOscEnabled(active);
+        repaint();
+    };
+    addAndMakeVisible(btnDevOsc);
+
+    // --- Audio Input Device Selector (Phase 11.1) ---
+    updateInputDeviceList();
+    addAndMakeVisible(inputDeviceComboBox);
+
     // --- Add Module combo ---
     addModuleComboBox.setTextWhenNothingSelected("+ Add Module");
     addModuleComboBox.addItem("Peak / RMS Meter", 1);
@@ -142,24 +160,33 @@ void FF360MeterEditor::timerCallback()
         perfDot.setTooltip("Perf: 60 FPS");
     }
 
-    // I/O dot: cyan = live, amber = silent, red = no input
-    bool isConnected = audioProcessor.getIsInputConnected();
-    bool isSilent    = audioProcessor.getIsAudioSilent();
+    // Phase 11.1: I/O dot & DEV OSC state
+    bool isOsc        = audioProcessor.isDevOscEnabled();
+    bool isConnected  = audioProcessor.getIsInputConnected();
+    bool isSilent     = audioProcessor.getIsAudioSilent();
+    float peakDb      = audioProcessor.getCurrentPeakLevelDb();
 
-    if (!isConnected)
+    btnDevOsc.setToggleState(isOsc, juce::dontSendNotification);
+
+    if (isOsc)
+    {
+        ioStatusDot.setColour(juce::Label::textColourId, juce::Colour(0xffd946ef));
+        ioStatusDot.setTooltip("● DEV OSC ACTIVE [1 kHz @ -18 dBFS]");
+    }
+    else if (!isConnected)
     {
         ioStatusDot.setColour(juce::Label::textColourId, ff360_labs::AccentAmberRed);
-        ioStatusDot.setTooltip("No input device connected");
+        ioStatusDot.setTooltip("● NO INPUT DEVICE CONNECTED");
     }
     else if (isSilent)
     {
         ioStatusDot.setColour(juce::Label::textColourId, ff360_labs::AccentGold.withAlpha(0.8f));
-        ioStatusDot.setTooltip("Input connected — idle / silent");
+        ioStatusDot.setTooltip("● INPUT ACTIVE // SILENT (IDLE)");
     }
     else
     {
         ioStatusDot.setColour(juce::Label::textColourId, juce::Colour(0xff00e5ff));
-        ioStatusDot.setTooltip("Live audio input active");
+        ioStatusDot.setTooltip("● LIVE AUDIO ACTIVE [" + juce::String(peakDb, 1) + " dBFS]");
     }
 }
 
@@ -310,7 +337,9 @@ void FF360MeterEditor::showAboutDialog()
 
 void FF360MeterEditor::openAudioSettings()
 {
-    AudioSettingsModal::showModal(this, audioProcessor, getStandaloneDeviceManager());
+    AudioSettingsModal::showModal(this, audioProcessor, getStandaloneDeviceManager(), [this] {
+        updateInputDeviceList();
+    });
 }
 
 juce::AudioDeviceManager* FF360MeterEditor::getStandaloneDeviceManager()
@@ -470,6 +499,60 @@ ff360_labs::DashboardLayout FF360MeterEditor::getCurrentDashboardLayout() const
     return layout;
 }
 
+void FF360MeterEditor::updateInputDeviceList()
+{
+    inputDeviceComboBox.clear(juce::dontSendNotification);
+
+   #if JucePlugin_Build_Standalone
+    if (auto* devMgr = getStandaloneDeviceManager())
+    {
+        auto* currentType = devMgr->getCurrentDeviceTypeObject();
+        if (currentType != nullptr)
+        {
+            auto devices = currentType->getDeviceNames(true); // input devices
+            auto currentSetup = devMgr->getAudioDeviceSetup();
+            int selectedIdx = 0;
+
+            for (int i = 0; i < devices.size(); ++i)
+            {
+                juce::String devName = devices[i];
+                inputDeviceComboBox.addItem("In: " + devName, i + 1);
+                if (devName == currentSetup.inputDeviceName)
+                    selectedIdx = i + 1;
+            }
+
+            if (selectedIdx > 0)
+                inputDeviceComboBox.setSelectedId(selectedIdx, juce::dontSendNotification);
+            else if (!devices.isEmpty())
+                inputDeviceComboBox.setSelectedId(1, juce::dontSendNotification);
+            else
+                inputDeviceComboBox.setTextWhenNothingSelected("In: No Device");
+
+            inputDeviceComboBox.onChange = [this, devMgr, currentType] {
+                int id = inputDeviceComboBox.getSelectedId();
+                if (id > 0 && currentType != nullptr)
+                {
+                    auto devs = currentType->getDeviceNames(true);
+                    int idx = id - 1;
+                    if (idx >= 0 && idx < devs.size())
+                    {
+                        auto setup = devMgr->getAudioDeviceSetup();
+                        setup.inputDeviceName = devs[idx];
+                        setup.useDefaultInputChannels = true;
+                        devMgr->setAudioDeviceSetup(setup, true);
+                    }
+                }
+            };
+            return;
+        }
+    }
+   #endif
+
+    inputDeviceComboBox.addItem("In: DAW Host Audio", 1);
+    inputDeviceComboBox.setSelectedId(1, juce::dontSendNotification);
+    inputDeviceComboBox.setEnabled(false);
+}
+
 void FF360MeterEditor::paint (juce::Graphics& g)
 {
     g.fillAll(ff360_labs::BackgroundDark);
@@ -500,14 +583,17 @@ void FF360MeterEditor::resized()
     auto bounds = getLocalBounds();
     auto headerRect = bounds.removeFromTop(40);
     
-    // Right-to-left: status dots, then combos, then settings button
+    // Right-to-left: status dots, settings button, layout combo, add module combo, input device combo, DEV OSC button
     ioStatusDot.setBounds(headerRect.removeFromRight(18).reduced(0, 8));
     perfDot.setBounds(headerRect.removeFromRight(18).reduced(0, 8));
-    headerRect.removeFromRight(4); // gap before combos
-    addModuleComboBox.setBounds(headerRect.removeFromRight(140).reduced(3, 6));
-    layoutComboBox.setBounds(headerRect.removeFromRight(150).reduced(3, 6));
-    headerRect.removeFromRight(4);
-    btnSettings.setBounds(headerRect.removeFromRight(36).reduced(3, 6));
+    headerRect.removeFromRight(4); // gap
+    btnSettings.setBounds(headerRect.removeFromRight(34).reduced(2, 6));
+    headerRect.removeFromRight(4); // gap
+    layoutComboBox.setBounds(headerRect.removeFromRight(135).reduced(2, 6));
+    addModuleComboBox.setBounds(headerRect.removeFromRight(130).reduced(2, 6));
+    inputDeviceComboBox.setBounds(headerRect.removeFromRight(175).reduced(2, 6));
+    headerRect.removeFromRight(4); // gap
+    btnDevOsc.setBounds(headerRect.removeFromRight(72).reduced(2, 6));
     
     meterDashboard.setBounds(bounds.reduced(8));
 }

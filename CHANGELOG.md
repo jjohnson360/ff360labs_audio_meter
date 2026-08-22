@@ -4,6 +4,21 @@ All notable changes to the **ff360_labs Modular Audio Meter** are documented in 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to beta-stage [Semantic Versioning](https://semver.org/) (`0.x`/`Beta` releases may include breaking changes between minor versions).
 
+## [Beta v1.2.2] — 2026-08-22
+
+Phase 11 — silence diagnosis, real-time internal reference oscillator (DEV OSC), standalone input device selector, and module header vector icon encoding fix.
+
+### Added
+- **DEV OSC Calibrated Reference Generator (11.1)**: Built-in 1 kHz sine generator synthesized directly in `FF360MeterProcessor::processBlock` at -18 dBFS (0.12589 amp). Toggleable via a dedicated `DEV OSC` button in the top navigation bar. Instantly drives all meters across the suite to verified calibration targets for self-diagnosis.
+- **Audio Input Device Selector (11.1)**: Top navigation bar dropdown in Standalone mode listing all available system input/loopback endpoints, applying changes dynamically to `AudioDeviceManager`.
+- **4-State I/O Status Badge (11.1.3)**: Distinguishes between DEV OSC active (🟣 magenta), no hardware input device (🔴 red), input connected but idle/silent (🟡 amber), and active live audio streaming with live peak level readout (🟢 cyan).
+- **MSVC `/utf-8` Compiler Flag**: Enforces UTF-8 execution character sets to guarantee multi-platform string and asset integrity.
+- **Max for Live Accuracy & Diagnostic Guidelines (11.3–11.6)**: Comprehensive companion document establishing DEV OSC reference standards, dynamic `[adstatus sr]` sample-rate scaling, and BS.1770-4 dual-gate LRA rules for the parallel M4L suite.
+
+### Fixed
+- **Module Header Kebab Icon Encoding Bug (11.2)**: Replaced string-literal text buttons with native vector-rendered `KebabMenuButton` (`fillEllipse`), eliminating multi-byte encoding corruption (`â‹®`) and font glyph mismatch issues.
+- **VU Scope Button Label**: Renamed local VU debug overlay toggle to `OVERLAY` to avoid confusion with the global `DEV OSC` audio reference generator.
+
 ---
 
 ## [Beta v1.2.1] — 2026-08-14

@@ -131,14 +131,37 @@ void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             vuDSP.setReferenceLevelDb(presets[(size_t)idx].refDb);
     }
 
+    // Phase 11: DEV OSC Internal Reference Tone Generator (1 kHz @ -18 dBFS)
+    if (devOscEnabled.load())
+    {
+        double sr = getSampleRate();
+        if (sr <= 0.0) sr = 48000.0;
+        double phaseInc = juce::MathConstants<double>::twoPi * 1000.0 / sr;
+        const float oscAmp = std::pow(10.0f, -18.0f / 20.0f); // -18 dBFS = 0.12589
+        int numSamples = buffer.getNumSamples();
+        int numChannels = buffer.getNumChannels();
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float s = static_cast<float>(std::sin(oscPhase) * oscAmp);
+            oscPhase += phaseInc;
+            if (oscPhase >= juce::MathConstants<double>::twoPi)
+                oscPhase -= juce::MathConstants<double>::twoPi;
+
+            for (int ch = 0; ch < numChannels; ++ch)
+                buffer.setSample(ch, i, s);
+        }
+    }
+
     // Input Signal & Device Activity Monitoring
-    bool hasInputs = (totalNumInputChannels > 0 && buffer.getNumSamples() > 0);
+    bool isOscOn = devOscEnabled.load();
+    bool hasInputs = isOscOn || (totalNumInputChannels > 0 && buffer.getNumSamples() > 0);
     isInputConnected.store(hasInputs);
 
     float maxMag = hasInputs ? buffer.getMagnitude(0, buffer.getNumSamples()) : 0.0f;
     float peakDb = (maxMag > 1e-5f) ? (20.0f * std::log10(maxMag)) : -100.0f;
     currentPeakLevelDb.store(peakDb);
-    isAudioSilent.store(maxMag < 0.0001f); // Lower than ~-80 dBFS considered idle silence
+    isAudioSilent.store(!isOscOn && (maxMag < 0.0001f)); // Lower than ~-80 dBFS considered idle silence
 
     // Calculate Peak and RMS for this block
     MeterData blockData = peakRmsDSP.processBlock(buffer);

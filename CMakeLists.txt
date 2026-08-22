@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(FF360Meter VERSION 1.2.1)
+project(FF360Meter VERSION 1.2.2)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,6 +84,11 @@ target_compile_definitions(FF360Meter
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
+)
+
+target_compile_options(FF360Meter
+    PUBLIC
+        $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
 )
 
 target_link_libraries(FF360Meter
