@@ -47,9 +47,10 @@ void MeterModule::paint(juce::Graphics& g)
     g.setColour(ff360_labs::HairlineBorder);
     g.drawHorizontalLine((int)headerRect.getBottom(), headerRect.getX() + 6.0f, headerRect.getRight() - 6.0f);
 
-    // Header Text
-    g.setColour(ff360_labs::TextOffWhite);
-    g.setFont(FF360LabsLookAndFeel::getCustomFont(11.0f, juce::Font::bold));
+    // Header Text — quiet sans-serif chrome (mockup's .m-title is muted/dim, not
+    // bright bold mono; brightness and mono type are reserved for live data).
+    g.setColour(ff360_labs::TextMuted);
+    g.setFont(FF360LabsLookAndFeel::getUiFont(10.5f, juce::Font::plain));
     g.drawText(moduleName.toUpperCase(),
                headerRect.toNearestInt().withTrimmedLeft(padding * 2 + 2),
                juce::Justification::centredLeft,

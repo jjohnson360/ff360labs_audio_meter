@@ -22,12 +22,21 @@ FF360LabsLookAndFeel::FF360LabsLookAndFeel()
 
 juce::Font FF360LabsLookAndFeel::getCustomFont(float height, int styleFlags)
 {
-    return juce::FontOptions(height, styleFlags).withName("Consolas");
+    // Was hardcoded to "Consolas" (Windows-only, silently falls back on macOS).
+    // juce::Font::getDefaultMonospacedFontName() resolves per-platform (Consolas on
+    // Windows, Menlo on macOS) while keeping the same technical/mono identity used
+    // throughout every module's data labels and scale ticks.
+    return juce::FontOptions(height, styleFlags).withName(juce::Font::getDefaultMonospacedFontName());
 }
 
 juce::Font FF360LabsLookAndFeel::getNumericReadoutFont(float height)
 {
-    return juce::FontOptions(height, juce::Font::bold).withName("Consolas");
+    return juce::FontOptions(height, juce::Font::bold).withName(juce::Font::getDefaultMonospacedFontName());
+}
+
+juce::Font FF360LabsLookAndFeel::getUiFont(float height, int styleFlags)
+{
+    return juce::FontOptions(height, styleFlags).withName(juce::Font::getDefaultSansSerifFontName());
 }
 
 void FF360LabsLookAndFeel::drawGlassPanel (juce::Graphics& g, juce::Rectangle<float> bounds, float cornerRadius)
@@ -158,9 +167,9 @@ void FF360LabsLookAndFeel::drawButtonText (juce::Graphics& g,
                                            bool /*shouldDrawButtonAsHighlighted*/,
                                            bool shouldDrawButtonAsDown)
 {
-    juce::Font font = getCustomFont(13.0f, juce::Font::plain);
+    juce::Font font = getUiFont(12.5f, juce::Font::plain);
     g.setFont(font);
-    
+
     bool isActive = shouldDrawButtonAsDown || button.getToggleState();
     juce::Colour textColour = isActive ? Palette::accentGold : Palette::textOffWhite;
     g.setColour(textColour);
@@ -195,7 +204,7 @@ void FF360LabsLookAndFeel::drawToggleButton (juce::Graphics& g,
     }
 
     g.setColour(button.getToggleState() ? Palette::textOffWhite : Palette::textMuted);
-    g.setFont(getCustomFont(13.0f));
+    g.setFont(getUiFont(12.5f));
     g.drawText(button.getButtonText(),
                bounds.withTrimmedLeft(tickBounds.getRight() + 6.0f).toNearestInt(),
                juce::Justification::centredLeft, true);
@@ -275,7 +284,7 @@ void FF360LabsLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
         g.setColour(isActive ? Palette::textOffWhite : Palette::textMuted);
     }
 
-    g.setFont(getCustomFont(13.0f));
+    g.setFont(getUiFont(12.5f));
     g.drawText(text, area.reduced(10, 0), juce::Justification::centredLeft, true);
 }
 

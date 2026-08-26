@@ -1,0 +1,17 @@
+ff360_labs Modular Audio Meter -- Beta v1.2.3
+Windows 10/11 (x64)
+
+CHANGES FROM v1.2.2
+- FIX: Phase Scope persistence trail no longer smears/over-persists on Windows
+  (decay is now time-based instead of tied to paint-call frequency)
+- STYLE: UI typography/chrome/spacing pass moving closer to the reference
+  dashboard mockup (sans-serif chrome font, muted headers, tighter grid gap)
+
+INSTALLATION
+1. Copy FF360Meter.vst3\ to:
+   C:\Program Files\Common Files\VST3\
+2. Restart your DAW and scan for new plugins.
+3. To run standalone: launch FF360Meter.exe
+4. For system audio: Settings (gear) > Audio I/O > select Stereo Mix or WASAPI loopback.
+
+BETA: Pre-release software. Report issues at https://github.com/jjohnson360/ff360labs_audio_meter

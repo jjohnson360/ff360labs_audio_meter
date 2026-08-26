@@ -33,8 +33,14 @@ public:
                               bool isWarning = false, const juce::String& badgeText = "");
 
     // Font Helpers
+    // getCustomFont / getNumericReadoutFont: monospace, for technical readouts, scale
+    // ticks, and data labels (mirrors the mockup's pervasive use of JetBrains Mono).
     static juce::Font getCustomFont (float height = 14.0f, int styleFlags = juce::Font::plain);
     static juce::Font getNumericReadoutFont (float height = 18.0f);
+    // getUiFont: proportional sans, reserved for interactive chrome — buttons, popup
+    // menus, and module header titles — matching the mockup's Inter/JetBrains Mono
+    // split where gold/mono is for data and sans is for navigation chrome.
+    static juce::Font getUiFont (float height = 13.0f, int styleFlags = juce::Font::plain);
 
     // Component Styling Overrides
     void drawButtonBackground (juce::Graphics& g,

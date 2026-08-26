@@ -4,6 +4,21 @@ All notable changes to the **ff360_labs Modular Audio Meter** are documented in 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to beta-stage [Semantic Versioning](https://semver.org/) (`0.x`/`Beta` releases may include breaking changes between minor versions).
 
+## [Beta v1.2.3] — 2026-08-26
+
+Phase 12 — Windows Phase Scope rendering fix and a UI style pass toward the reference dashboard mockup.
+
+### Fixed
+- **Phase Scope persistence trail smeared/overly-persistent on Windows**: `updateScopeImage()` faded the Lissajous trail by a fixed `×0.75` multiplier once per *paint call*, tuned assuming a steady ~60Hz cadence. `repaint()` only requests a paint — the OS decides when it actually runs — and this project enables no Direct2D or OpenGL context, so Windows falls back to JUCE's default unaccelerated software/GDI renderer, which services paints far less consistently under load than macOS's compositor. When paints landed slower than 60Hz, the trail decayed once per (longer, variable) real interval instead of once per 1/60s, fading much slower than intended in real time. The decay is now computed from actual elapsed wall-clock time (`PhaseScopeModule::lastDecayTimeMs`), so the fade rate stays constant regardless of how often the OS actually services the paint.
+
+### Changed
+- **Typography hierarchy**: introduced a dedicated sans-serif `getUiFont()` for interactive chrome (buttons, popup menus, toggle text, module header titles), separate from the monospace `getCustomFont()`/`getNumericReadoutFont()` used for technical data and readouts — mirroring the reference mockup's Inter/JetBrains Mono split, where the previous single "Consolas" font rendered every element identically (and silently failed to resolve at all on macOS, where Consolas doesn't exist).
+- **Module header titles & app-bar subtitle** dimmed from bright bold white to a muted sans, matching the mockup's understated chrome — brightness and gold are now reserved for live data and the brand name, not structural chrome.
+- **Dashboard grid gap** tightened from 4px to 2px for a denser panel layout closer to the mockup.
+- Segmented LED meters, glassmorphic panel treatment, and gold hairline module borders are unchanged — these are established product identity, not mockup deviations.
+
+---
+
 ## [Beta v1.2.2] — 2026-08-22
 
 Phase 11 — silence diagnosis, real-time internal reference oscillator (DEV OSC), standalone input device selector, and module header vector icon encoding fix.
@@ -80,6 +95,7 @@ First full-suite release. Establishes the core architecture, brand system, and m
 
 ---
 
+[Beta v1.2.3]: #beta-v123--2026-08-26
 [Beta v1.2.1]: #beta-v121--2026-08-14
 [Beta v1.2.0]: #beta-v120--2026-08-14
 [1.1.0]: #110--2026-08-13

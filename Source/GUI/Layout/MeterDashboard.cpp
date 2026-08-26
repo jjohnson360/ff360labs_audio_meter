@@ -149,8 +149,13 @@ void MeterDashboard::resized()
 void MeterDashboard::updateGridLayout()
 {
     juce::Grid grid;
-    grid.rowGap = juce::Grid::Px(4);
-    grid.columnGap = juce::Grid::Px(4);
+    // Mockup uses a 1px hairline gap between modules for a denser, more connected
+    // panel grid; kept at 2px here (rather than a literal 1px) since our module
+    // cards render their own 8px-rounded glass border, which needs a hair more
+    // breathing room than the mockup's flat/square panel edges to avoid the
+    // rounded corners visually clipping into their neighbors.
+    grid.rowGap = juce::Grid::Px(2);
+    grid.columnGap = juce::Grid::Px(2);
     
     // Auto-flow items
     grid.autoFlow = juce::Grid::AutoFlow::row;

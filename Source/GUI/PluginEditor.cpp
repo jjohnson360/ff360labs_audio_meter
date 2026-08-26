@@ -574,7 +574,9 @@ void FF360MeterEditor::paint (juce::Graphics& g)
     g.setColour(ff360_labs::TextMuted);
     g.drawText(" // ", headerRect.toNearestInt().withTrimmedLeft(110), juce::Justification::centredLeft, true);
 
-    g.setColour(ff360_labs::TextOffWhite);
+    // Mockup keeps the brand subtitle dim like the separator, not bright white —
+    // gold/brightness is reserved for the brand name and live data, not chrome.
+    g.setColour(ff360_labs::TextMuted);
     g.drawText("MODULAR METER", headerRect.toNearestInt().withTrimmedLeft(135), juce::Justification::centredLeft, true);
 }
 

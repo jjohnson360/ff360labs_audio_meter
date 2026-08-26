@@ -20,7 +20,12 @@ private:
     PhaseScopeData currentData;
 
     juce::Image scopeImage;
-    
+
+    // Wall-clock timestamp (ms) of the last successful persistence decay, so the
+    // fade rate stays constant in real time regardless of how often the OS
+    // actually services repaint() (see updateScopeImage()).
+    double lastDecayTimeMs = 0.0;
+
     void updateScopeImage(juce::Rectangle<float> bounds);
     void drawCorrelationMeter(juce::Graphics& g, juce::Rectangle<float> bounds);
 

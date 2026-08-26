@@ -1,6 +1,7 @@
 #include "PhaseScopeModule.h"
 #include "../../Core/Constants.h"
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
+#include <cmath>
 
 PhaseScopeModule::PhaseScopeModule(AudioFifo<PhaseScopeData>& fifoToUse)
     : MeterModule("PHASE SCOPE", MeterModuleType::PhaseScope), meterFifo(fifoToUse)
@@ -68,9 +69,26 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
     }
     
     juce::Graphics g(scopeImage);
-    
-    // Smooth fading persistence — 0.75f gives a snappier trail than the previous 0.82f
-    scopeImage.multiplyAllAlphas(0.75f);
+
+    // Smooth fading persistence, time-based rather than call-based.
+    // The 0.75f factor was tuned for a ~60Hz paint cadence ("snappier trail" than
+    // the previous 0.82f), but repaint() is only a request — the OS decides when
+    // it's actually serviced. JUCE's default Windows renderer is unaccelerated
+    // software/GDI (no Direct2D/OpenGL context is enabled anywhere in this
+    // project), so paints land far less regularly there than on macOS's
+    // accelerated compositor. Applying a fixed multiplier once per *call* meant
+    // the trail decayed once per (variable-length) paint instead of once per
+    // 1/60s of real time — on a slower/irregular cadence the image faded far
+    // slower than intended, producing the smeared/overly-persistent look seen
+    // on Windows. Scaling the exponent by actual elapsed time keeps the fade
+    // rate constant in real time no matter how often paint() actually runs.
+    double now = juce::Time::getMillisecondCounterHiRes();
+    double dtSeconds = (lastDecayTimeMs > 0.0) ? (now - lastDecayTimeMs) / 1000.0 : (1.0 / 60.0);
+    dtSeconds = juce::jlimit(0.0, 0.5, dtSeconds); // guard startup / long pauses (hidden module, etc.)
+    lastDecayTimeMs = now;
+
+    float decay = (float) std::pow(0.75, dtSeconds * 60.0);
+    scopeImage.multiplyAllAlphas(decay);
     
     if (currentData.samplePairs.empty())
         return;
