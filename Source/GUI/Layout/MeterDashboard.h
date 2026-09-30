@@ -27,6 +27,12 @@ public:
     void setFocusedModule(MeterModule* moduleToFocus);
     
     LayoutMode getLayoutMode() const { return currentMode; }
+
+    // Detached module windows are scaled like the editor
+    void setUiZoom(float zoom);
+
+    // Called whenever the set of docked modules or the layout mode changes
+    std::function<void()> onLayoutChanged;
     const juce::Array<MeterModule*>& getModules() const { return modules; }
 
 private:
@@ -34,10 +40,12 @@ private:
     juce::OwnedArray<FloatingModuleWindow> floatingWindows;
     LayoutMode currentMode = LayoutMode::Grid;
     MeterModule* focusedModule = nullptr;
+    float uiZoom = 1.0f;
     juce::ComponentAnimator animator;
 
     void updateGridLayout();
     void updateMaximizedLayout();
+    void notifyLayoutChanged() { if (onLayoutChanged) onLayoutChanged(); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MeterDashboard)
 };

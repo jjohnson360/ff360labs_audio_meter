@@ -7,6 +7,8 @@ PeakRmsMeterModule::PeakRmsMeterModule(AudioFifo<MeterData>& fifoToUse)
 {
     // Configure ballistics for UI threading (assuming ~60fps)
     dsp.prepare(60.0, 1);
+    setTooltip("Peak / RMS: segmented bars show each channel's sample peak, with the brighter core at the "
+               "RMS level. Segments above -3 dBFS light in the warning colour.");
     startTimerHz(60);
 }
 
@@ -17,11 +19,35 @@ PeakRmsMeterModule::~PeakRmsMeterModule()
 
 void PeakRmsMeterModule::timerCallback()
 {
-    MeterData newData;
-    if (meterFifo.pullLatest(newData))
+    // Combine every block since the last frame: the highest peak, and RMS averaged as power.
+    // (Taking only the newest block dropped peaks from the ~5-20 blocks in between.)
+    MeterData block, newData { -100.0f, -100.0f, -100.0f, -100.0f };
+    double powerL = 0.0, powerR = 0.0;
+    int numBlocks = 0;
+
+    while (meterFifo.pull(block))
     {
+        newData.peakL = juce::jmax(newData.peakL, block.peakL);
+        newData.peakR = juce::jmax(newData.peakR, block.peakR);
+        powerL += std::pow(10.0, block.rmsL / 10.0);
+        powerR += std::pow(10.0, block.rmsR / 10.0);
+        ++numBlocks;
+    }
+
+    if (numBlocks > 0)
+    {
+        newData.rmsL = PeakRmsDSP::gainToDb((float) std::sqrt(powerL / numBlocks));
+        newData.rmsR = PeakRmsDSP::gainToDb((float) std::sqrt(powerR / numBlocks));
         dsp.applyBallistics(currentSmoothedData, newData);
-        repaint();
+
+        // Repaint only when a bar or readout visibly changes
+        const float moved = juce::jmax(juce::jmax(std::abs(currentSmoothedData.peakL - lastDrawn.peakL), std::abs(currentSmoothedData.peakR - lastDrawn.peakR)),
+                                       juce::jmax(std::abs(currentSmoothedData.rmsL - lastDrawn.rmsL), std::abs(currentSmoothedData.rmsR - lastDrawn.rmsR)));
+        if (moved > 0.05f)
+        {
+            lastDrawn = currentSmoothedData;
+            repaint(getModuleBounds());
+        }
     }
 }
 

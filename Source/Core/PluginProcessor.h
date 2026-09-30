@@ -56,18 +56,25 @@ public:
     LufsDSP lufsDSP;
     AudioFifo<LufsMeterData> lufsFifo;
 
-    // Phase 5: Phase Scope
+    // Phase 5: Phase Scope (a frame per block; the UI drains them all at 60 Hz)
     PhaseScopeDSP phaseScopeDSP;
-    AudioFifo<PhaseScopeData> phaseScopeFifo;
+    AudioFifo<PhaseScopeData, 128> phaseScopeFifo;
 
-    // Phase 5: Spectrum Analyzer
+    // Phase 5: Spectrum Analyzer (a frame per FFT, ~12-47 per second)
     SpectrumDSP spectrumDSP;
-    AudioFifo<SpectrumData> spectrumFifo;
+    AudioFifo<SpectrumData, 8> spectrumFifo;
 
-    // Phase 5: Histogram
+    // Phase 5: Histogram (a frame per 100 ms)
     HistogramDSP histogramDSP;
-    AudioFifo<HistogramData> histogramFifo;
+    AudioFifo<HistogramData, 32> histogramFifo;
     std::atomic<bool> triggerHistogramReset { false };
+
+    // Clears Integrated / LRA, the session maxima and the histogram. Thread-safe:
+    // the audio thread performs the reset at the start of its next block.
+    void resetLoudnessSession();
+
+    // Highest sample peak per channel since the last loudness reset, in dBFS
+    float getSessionPeakDb (int channel) const { return sessionPeakDb[channel == 0 ? 0 : 1].load(); }
 
     // Phase 9: Signal & Connection State Monitoring
     bool getIsInputConnected() const { return isInputConnected.load(); }
@@ -79,6 +86,16 @@ public:
     void setDevOscEnabled(bool enabled) { devOscEnabled.store(enabled); }
 
 private:
+    std::atomic<float>* vuRefLevelParam = nullptr;
+
+    // Scratch frames, reused every block (kept off the audio thread's stack)
+    PhaseScopeData phaseScratch;
+    SpectrumData spectrumScratch;
+    HistogramData histogramScratch;
+
+    std::array<std::atomic<float>, 2> sessionPeakDb { -100.0f, -100.0f };
+    std::atomic<bool> sessionPeakResetRequested { false };
+
     std::atomic<bool> isInputConnected { false };
     std::atomic<bool> isAudioSilent { true };
     std::atomic<float> currentPeakLevelDb { -100.0f };

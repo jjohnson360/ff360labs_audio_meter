@@ -12,6 +12,7 @@ FF360MeterProcessor::FF360MeterProcessor()
                        ),
        apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    vuRefLevelParam = apvts.getRawParameterValue("vuRefLevel");
 }
 
 FF360MeterProcessor::~FF360MeterProcessor()
@@ -115,6 +116,7 @@ bool FF360MeterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
 
 void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    juce::ignoreUnused (midiMessages);
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -123,9 +125,9 @@ void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         buffer.clear (i, 0, buffer.getNumSamples());
 
     // Update VU Reference Level from APVTS
-    if (auto* param = apvts.getRawParameterValue("vuRefLevel"))
+    if (vuRefLevelParam != nullptr)
     {
-        int idx = (int)param->load();
+        int idx = (int) vuRefLevelParam->load();
         const auto& presets = VuDSP::getCalibrationPresets();
         if (idx >= 0 && idx < (int)presets.size())
             vuDSP.setReferenceLevelDb(presets[(size_t)idx].refDb);
@@ -137,7 +139,7 @@ void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         double sr = getSampleRate();
         if (sr <= 0.0) sr = 48000.0;
         double phaseInc = juce::MathConstants<double>::twoPi * 1000.0 / sr;
-        const float oscAmp = std::pow(10.0f, -18.0f / 20.0f); // -18 dBFS = 0.12589
+        constexpr float oscAmp = 0.12589254f; // -18 dBFS
         int numSamples = buffer.getNumSamples();
         int numChannels = buffer.getNumChannels();
 
@@ -153,31 +155,51 @@ void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         }
     }
 
+    // Only the main input bus is metered
+    const int numMeteredChannels = juce::jmin (buffer.getNumChannels(), juce::jmax (1, totalNumInputChannels), 2);
+    if (numMeteredChannels == 0 || buffer.getNumSamples() == 0)
+        return;
+
+    // Refers to the host's channel data; no allocation for 1-2 channels
+    juce::AudioBuffer<float> metered (buffer.getArrayOfWritePointers(), numMeteredChannels, buffer.getNumSamples());
+
     // Input Signal & Device Activity Monitoring
     bool isOscOn = devOscEnabled.load();
     bool hasInputs = isOscOn || (totalNumInputChannels > 0 && buffer.getNumSamples() > 0);
     isInputConnected.store(hasInputs);
 
-    float maxMag = hasInputs ? buffer.getMagnitude(0, buffer.getNumSamples()) : 0.0f;
+    float maxMag = hasInputs ? metered.getMagnitude(0, metered.getNumSamples()) : 0.0f;
     float peakDb = (maxMag > 1e-5f) ? (20.0f * std::log10(maxMag)) : -100.0f;
     currentPeakLevelDb.store(peakDb);
     isAudioSilent.store(!isOscOn && (maxMag < 0.0001f)); // Lower than ~-80 dBFS considered idle silence
 
+    if (sessionPeakResetRequested.exchange(false))
+        for (auto& p : sessionPeakDb)
+            p.store(-100.0f);
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const int src = juce::jmin (ch, numMeteredChannels - 1);
+        const float mag = metered.getMagnitude (src, 0, metered.getNumSamples());
+        const float db = mag > 1e-5f ? 20.0f * std::log10 (mag) : -100.0f;
+        if (db > sessionPeakDb[(size_t) ch].load())
+            sessionPeakDb[(size_t) ch].store (db);
+    }
+
     // Calculate Peak and RMS for this block
-    MeterData blockData = peakRmsDSP.processBlock(buffer);
+    MeterData blockData = peakRmsDSP.processBlock(metered);
     
     // Calculate VU for this block
-    VuMeterData vuData = vuDSP.processBlock(buffer);
+    VuMeterData vuData = vuDSP.processBlock(metered);
     
     // Calculate LUFS for this block
-    LufsMeterData lufsData = lufsDSP.processBlock(buffer);
+    LufsMeterData lufsData = lufsDSP.processBlock(metered);
     
     // Calculate Phase Scope for this block
-    PhaseScopeData phaseData = phaseScopeDSP.processBlock(buffer);
+    phaseScopeDSP.processBlock(metered, phaseScratch);
     
     // Calculate Spectrum for this block
-    SpectrumData specData;
-    bool newSpec = spectrumDSP.processBlock(buffer, specData);
+    bool newSpec = spectrumDSP.processBlock(metered, spectrumScratch);
     
     if (triggerHistogramReset.exchange(false))
     {
@@ -185,16 +207,22 @@ void FF360MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     }
     
     // Calculate Histogram for this block using Short-term LUFS
-    HistogramData histData;
-    bool newHist = histogramDSP.processBlock(buffer, lufsData.shortTerm, histData);
+    bool newHist = histogramDSP.processBlock(metered, lufsData.shortTerm, histogramScratch);
     
     // Push the struct safely to the GUI thread
     meterFifo.push(blockData);
     vuFifo.push(vuData);
     lufsFifo.push(lufsData);
-    phaseScopeFifo.push(phaseData);
-    if (newSpec) spectrumFifo.push(specData);
-    if (newHist) histogramFifo.push(histData);
+    phaseScopeFifo.push(phaseScratch);
+    if (newSpec) spectrumFifo.push(spectrumScratch);
+    if (newHist) histogramFifo.push(histogramScratch);
+}
+
+void FF360MeterProcessor::resetLoudnessSession()
+{
+    lufsDSP.requestReset();
+    triggerHistogramReset.store(true);
+    sessionPeakResetRequested.store(true);
 }
 
 void FF360MeterProcessor::resetHistogram()
@@ -224,7 +252,12 @@ void FF360MeterProcessor::setStateInformation (const void* data, int sizeInBytes
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
     if (xmlState.get() != nullptr)
         if (xmlState->hasTagName (apvts.state.getType()))
+        {
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+
+            const int fftOrder = apvts.state.getProperty ("fftOrder", static_cast<int> (FFTResolution::Mid));
+            spectrumDSP.setFFTResolution (static_cast<FFTResolution> (fftOrder));
+        }
 }
 
 #include "LoudnessTarget.h"

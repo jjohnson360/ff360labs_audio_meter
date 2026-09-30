@@ -2,7 +2,10 @@
 #include <juce_core/juce_core.h>
 #include <array>
 
-template <typename DataType>
+// Single-producer / single-consumer frame queue from the audio thread to the UI.
+// DataType must be trivially copyable in practice (fixed-size arrays, no vectors):
+// push() runs on the audio thread and must never allocate.
+template <typename DataType, int Capacity = 1024>
 class AudioFifo
 {
 public:
@@ -32,19 +35,16 @@ public:
     bool pullLatest(DataType& data)
     {
         bool foundData = false;
-        DataType temp;
-        while (pull(temp))
-        {
-            data = temp;
+        while (pull(data))
             foundData = true;
-        }
         return foundData;
     }
 
+    int getNumReady() const { return abstractFifo.getNumReady(); }
+
 private:
-    static constexpr int Capacity = 1024;
     juce::AbstractFifo abstractFifo;
     std::array<DataType, Capacity> buffer;
-    
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioFifo)
 };

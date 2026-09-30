@@ -20,8 +20,8 @@ public:
 
 private:
     AudioFifo<VuMeterData>& meterFifo;
-    VuDSP* vuDSPInstance = nullptr;
     VuMeterData currentData;
+    float lastDrawnVuL = 1.0e3f, lastDrawnVuR = 1.0e3f;
 
     // Single source of timing truth: 1:1 direct tracking of DSP ballistics
     float renderedVuL = -60.0f;

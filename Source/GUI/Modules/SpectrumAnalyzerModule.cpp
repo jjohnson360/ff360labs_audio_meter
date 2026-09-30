@@ -1,21 +1,32 @@
-﻿#include "SpectrumAnalyzerModule.h"
+#include "SpectrumAnalyzerModule.h"
 #include "../../Core/Constants.h"
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
 #include <cmath>
 
-SpectrumAnalyzerModule::SpectrumAnalyzerModule(AudioFifo<SpectrumData>& fifoToUse, double sampleRate)
+SpectrumAnalyzerModule::SpectrumAnalyzerModule(AudioFifo<SpectrumData, 8>& fifoToUse, SpectrumDSP& dspToUse, juce::AudioProcessorValueTreeState& apvtsToUse)
     : MeterModule("SPECTRUM ANALYZER", MeterModuleType::Spectrum),
       meterFifo(fifoToUse),
-      currentSampleRate(sampleRate > 0.0 ? sampleRate : 48000.0)
+      spectrumDSP(dspToUse),
+      apvts(apvtsToUse)
 {
+    setTooltip("Spectrum Analyzer: level per frequency in dBFS (a 0 dBFS sine reads 0 dB). "
+               "Gold is the left channel, grey the right.");
+
     // Phase 10.5: FFT resolution selector with tooltip explaining the tradeoff
     fftResolutionCombo.setTextWhenNothingSelected("FFT Res");
     fftResolutionCombo.addItem("Low (1024)",    1);
     fftResolutionCombo.addItem("Medium (2048)", 2);
     fftResolutionCombo.addItem("High (4096)",   3);
-    fftResolutionCombo.setSelectedId(2, juce::dontSendNotification); // Medium default
-    fftResolutionCombo.setTooltip("FFT Resolution: higher orders give better frequency resolution "
-                                   "at the cost of increased CPU usage and update latency.");
+    fftResolutionCombo.setSelectedId(static_cast<int>(spectrumDSP.getFFTResolution()) - static_cast<int>(FFTResolution::Low) + 1,
+                                     juce::dontSendNotification);
+    fftResolutionCombo.setTooltip("FFT resolution: more points resolve the low end more finely, "
+                                   "but update more slowly and use more CPU.");
+    fftResolutionCombo.onChange = [this]
+    {
+        const int order = static_cast<int>(FFTResolution::Low) + fftResolutionCombo.getSelectedId() - 1;
+        spectrumDSP.setFFTResolution(static_cast<FFTResolution>(order));
+        apvts.state.setProperty("fftOrder", order, nullptr);
+    };
     addAndMakeVisible(fftResolutionCombo);
 
     startTimerHz(60);
@@ -28,17 +39,11 @@ SpectrumAnalyzerModule::~SpectrumAnalyzerModule()
 
 void SpectrumAnalyzerModule::timerCallback()
 {
-    SpectrumData newData;
-    bool hasNewData = false;
-
-    while (meterFifo.pull(newData))
+    if (meterFifo.pullLatest(currentData) && currentData.numBins > 0)
     {
-        currentData = newData;
-        hasNewData = true;
+        currentSampleRate = currentData.sampleRate > 0.0 ? currentData.sampleRate : 48000.0;
+        repaint(getModuleBounds());
     }
-
-    if (hasNewData && !currentData.magnitudesL.empty())
-        repaint();
 }
 
 float SpectrumAnalyzerModule::getLogX(float binIndex, float numBins, float width)
@@ -58,7 +63,7 @@ float SpectrumAnalyzerModule::getLogX(float binIndex, float numBins, float width
 }
 
 void SpectrumAnalyzerModule::drawSpectrum(juce::Graphics& g,
-                                           const std::vector<float>& magnitudes,
+                                           const float* magnitudes, int numBins,
                                            juce::Rectangle<float> plotArea,
                                            float minDb, float rangeDb,
                                            juce::Colour lineColour,
@@ -69,7 +74,6 @@ void SpectrumAnalyzerModule::drawSpectrum(juce::Graphics& g,
     float yOffset = plotArea.getY();
     float xOffset = plotArea.getX();
 
-    int numBins = static_cast<int>(magnitudes.size());
     if (numBins < 2) return;
 
     juce::Path curvePath;
@@ -78,7 +82,7 @@ void SpectrumAnalyzerModule::drawSpectrum(juce::Graphics& g,
 
     for (int i = 1; i < numBins; ++i)
     {
-        float db = magnitudes[static_cast<size_t>(i)];
+        float db = magnitudes[i];
         float normalizedY = 1.0f - juce::jlimit(0.0f, 1.0f, (db - minDb) / rangeDb);
 
         float x = xOffset + getLogX(static_cast<float>(i), static_cast<float>(numBins), w);
@@ -200,19 +204,19 @@ void SpectrumAnalyzerModule::paintModule(juce::Graphics& g)
                    juce::Justification::centredRight, false);
     }
 
-    if (currentData.magnitudesL.empty()) return;
+    if (currentData.numBins < 2) return;
 
     // 3. Draw R channel first (behind), desaturated gold-gray, no fill
-    if (!currentData.magnitudesR.empty())
+    if (currentData.hasRight)
     {
         juce::Colour rColour = ff360_labs::AccentGold
                                    .withSaturation(0.25f)
                                    .withAlpha(0.55f);
-        drawSpectrum(g, currentData.magnitudesR, plotArea, minDb, rangeDb, rColour, false);
+        drawSpectrum(g, currentData.magnitudesR.data(), currentData.numBins, plotArea, minDb, rangeDb, rColour, false);
     }
 
     // 4. Draw L channel on top, full gold with gradient fill
-    drawSpectrum(g, currentData.magnitudesL, plotArea, minDb, rangeDb,
+    drawSpectrum(g, currentData.magnitudesL.data(), currentData.numBins, plotArea, minDb, rangeDb,
                  ff360_labs::AccentGold, true);
 
     // 5. Channel legend (top-right corner)

@@ -32,14 +32,14 @@ public:
                               const juce::String& label, const juce::String& value,
                               bool isWarning = false, const juce::String& badgeText = "");
 
-    // Font Helpers
-    // getCustomFont / getNumericReadoutFont: monospace, for technical readouts, scale
-    // ticks, and data labels (mirrors the mockup's pervasive use of JetBrains Mono).
+    // Font Helpers. The brand fonts are embedded (MeterFonts binary data), as in Niche360,
+    // so text looks the same on every machine; system fonts are only a fallback.
+    // getCustomFont / getNumericReadoutFont: JetBrains Mono, for technical readouts, scale
+    // ticks, and data labels (bold selects the Medium weight).
     static juce::Font getCustomFont (float height = 14.0f, int styleFlags = juce::Font::plain);
     static juce::Font getNumericReadoutFont (float height = 18.0f);
-    // getUiFont: proportional sans, reserved for interactive chrome — buttons, popup
-    // menus, and module header titles — matching the mockup's Inter/JetBrains Mono
-    // split where gold/mono is for data and sans is for navigation chrome.
+    // getUiFont: Barlow Condensed, reserved for interactive chrome: buttons, popup
+    // menus, tooltips, dialogs and module header titles (bold selects SemiBold).
     static juce::Font getUiFont (float height = 13.0f, int styleFlags = juce::Font::plain);
 
     // Component Styling Overrides
@@ -66,6 +66,21 @@ public:
                        juce::ComboBox& box) override;
 
     void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override;
+    juce::Font getPopupMenuFont() override;
+    juce::Font getComboBoxFont (juce::ComboBox&) override;
+    juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+    juce::Font getAlertWindowTitleFont() override;
+    juce::Font getAlertWindowMessageFont() override;
+    juce::Font getAlertWindowFont() override;
+
+    // Any text drawn with the default sans-serif (dialogs, the audio device selector)
+    // resolves to Barlow Condensed
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
+
+    // Tooltips in the house style (dark box, hairline border, wrapped at a readable width)
+    juce::Rectangle<int> getTooltipBounds (const juce::String& tipText, juce::Point<int> screenPos,
+                                           juce::Rectangle<int> parentArea) override;
+    void drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height) override;
     
     void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
                             bool isSeparator, bool isActive, bool isHighlighted,

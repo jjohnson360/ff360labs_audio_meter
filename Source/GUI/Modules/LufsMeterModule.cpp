@@ -2,9 +2,17 @@
 #include "../../Core/Constants.h"
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
 
-LufsMeterModule::LufsMeterModule(AudioFifo<LufsMeterData>& fifoToUse, LufsDSP& dspInstance, juce::AudioProcessorValueTreeState* apvts)
-    : MeterModule("LUFS METER", MeterModuleType::LUFS), meterFifo(fifoToUse), lufsDSP(dspInstance)
+LufsMeterModule::LufsMeterModule(AudioFifo<LufsMeterData>& fifoToUse, std::function<void()> onResetRequested,
+                                 juce::AudioProcessorValueTreeState* apvts)
+    : MeterModule("LUFS METER", MeterModuleType::LUFS), meterFifo(fifoToUse), onReset(std::move(onResetRequested))
 {
+    setTooltip("Loudness (ITU-R BS.1770 / EBU R128). The arc is Integrated loudness since the last reset; "
+               "the outer dot is Short-term (3 s), the inner dot Momentary (400 ms). Double-click to reset.");
+    targetSelector.setTooltip("Delivery target. Integrated loudness within the tolerance reads PASS, "
+                              "otherwise HIGH or LOW.");
+    resetButton.setTooltip("Reset Integrated, LRA and the session maxima to start a new measurement. "
+                           "Double-clicking the meter does the same.");
+
     const auto& presets = ff360_labs::LoudnessTarget::getBuiltinPresets();
     for (size_t i = 0; i < presets.size(); ++i)
     {
@@ -30,14 +38,7 @@ LufsMeterModule::LufsMeterModule(AudioFifo<LufsMeterData>& fifoToUse, LufsDSP& d
     };
     
     addAndMakeVisible(resetButton);
-    resetButton.onClick = [this] {
-        lufsDSP.reset();
-        currentData = LufsMeterData();
-        momentaryDamper.reset(-60.0f);
-        shortTermDamper.reset(-60.0f);
-        integratedDamper.reset(-60.0f);
-        repaint();
-    };
+    resetButton.onClick = [this] { resetMeasurement(); };
     
     startTimerHz(60);
 }
@@ -67,7 +68,41 @@ void LufsMeterModule::timerCallback()
     shortTermDamper.update(1.0f / 60.0f);
     integratedDamper.update(1.0f / 60.0f);
 
+    // Repaint only when something visible moved (idle, the meter no longer repaints 60 times a second)
+    const float now[3] { momentaryDamper.getCurrent(), shortTermDamper.getCurrent(), integratedDamper.getCurrent() };
+    bool changed = false;
+    for (int i = 0; i < 3; ++i)
+    {
+        if (std::abs(now[i] - lastDrawn[i]) > 0.02f)
+        {
+            lastDrawn[i] = now[i];
+            changed = true;
+        }
+    }
+
+    if (changed || std::abs(currentData.lra - shownLra) > 0.01f || std::abs(currentData.integrated - shownIntegrated) > 0.01f)
+    {
+        shownLra = currentData.lra;
+        shownIntegrated = currentData.integrated;
+        repaint(getModuleBounds());
+    }
+}
+
+void LufsMeterModule::resetMeasurement()
+{
+    if (onReset)
+        onReset();
+
+    currentData = LufsMeterData();
+    momentaryDamper.reset(-60.0f);
+    shortTermDamper.reset(-60.0f);
+    integratedDamper.reset(-60.0f);
     repaint();
+}
+
+void LufsMeterModule::mouseDoubleClick(const juce::MouseEvent&)
+{
+    resetMeasurement();
 }
 
 void LufsMeterModule::drawLufsDial (juce::Graphics& g, juce::Rectangle<float> bounds)

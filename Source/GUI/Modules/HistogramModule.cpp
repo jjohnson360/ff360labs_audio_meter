@@ -2,8 +2,8 @@
 #include "../../Core/Constants.h"
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
 
-HistogramModule::HistogramModule(AudioFifo<HistogramData>& fifoToUse, std::function<void()> onResetCallback)
-    : MeterModule("HISTOGRAM (5 MIN)", MeterModuleType::Histogram), 
+HistogramModule::HistogramModule(AudioFifo<HistogramData, 32>& fifoToUse, std::function<void()> onResetCallback)
+    : MeterModule("HISTOGRAM (5 MIN)", MeterModuleType::Histogram),
       meterFifo(fifoToUse),
       onReset(onResetCallback)
 {
@@ -12,6 +12,13 @@ HistogramModule::HistogramModule(AudioFifo<HistogramData>& fifoToUse, std::funct
     addAndMakeVisible(btnReset);
 
     btnToggleAB.setEnabled(false);
+
+    setTooltip("Loudness histogram: how much of the last five minutes sat at each short-term loudness. "
+               "The brightest bar is the most common level. Double-click to reset.");
+    btnCaptureA.setTooltip("Capture the current histogram as A, to compare against later material.");
+    btnToggleAB.setTooltip("Overlay the captured A (blue) on the live histogram and show the difference "
+                           "between their most common levels.");
+    btnReset.setTooltip("Clear the histogram. Double-clicking it does the same.");
 
     btnCaptureA.onClick = [this]
     {
@@ -29,14 +36,7 @@ HistogramModule::HistogramModule(AudioFifo<HistogramData>& fifoToUse, std::funct
         repaint();
     };
 
-    btnReset.onClick = [this] 
-    { 
-        if (onReset) onReset(); 
-        currentData.bins.fill(0);
-        currentData.maxCount = 0;
-        currentData.modalBinIndex = 0;
-        repaint();
-    };
+    btnReset.onClick = [this] { resetHistogram(); };
 
     startTimerHz(15);
 }
@@ -46,21 +46,24 @@ HistogramModule::~HistogramModule()
     stopTimer();
 }
 
+void HistogramModule::resetHistogram()
+{
+    if (onReset) onReset();
+    currentData.bins.fill(0);
+    currentData.maxCount = 0;
+    currentData.modalBinIndex = 0;
+    repaint();
+}
+
+void HistogramModule::mouseDoubleClick(const juce::MouseEvent&)
+{
+    resetHistogram();
+}
+
 void HistogramModule::timerCallback()
 {
-    HistogramData newData;
-    bool hasNewData = false;
-    
-    while (meterFifo.pull(newData))
-    {
-        currentData = newData;
-        hasNewData = true;
-    }
-    
-    if (hasNewData)
-    {
-        repaint();
-    }
+    if (meterFifo.pullLatest(currentData))
+        repaint(getModuleBounds());
 }
 
 void HistogramModule::paintModule(juce::Graphics& g)
@@ -178,7 +181,7 @@ void HistogramModule::paintModule(juce::Graphics& g)
 void HistogramModule::resizedModule()
 {
     auto bounds = getLocalBounds();
-    int right = bounds.getRight() - 52;
+    int right = bounds.getRight() - 34 - 44; // clear of the header's options menu button
     
     btnReset.setBounds(right, 3, 44, 18);
     right -= 56;

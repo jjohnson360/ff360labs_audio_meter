@@ -3,10 +3,14 @@
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
 #include <cmath>
 
-PhaseScopeModule::PhaseScopeModule(AudioFifo<PhaseScopeData>& fifoToUse)
+PhaseScopeModule::PhaseScopeModule(AudioFifo<PhaseScopeData, 128>& fifoToUse)
     : MeterModule("PHASE SCOPE", MeterModuleType::PhaseScope), meterFifo(fifoToUse)
 {
     scopeImage = juce::Image(juce::Image::ARGB, 100, 100, true);
+    currentData.samplePairs.reserve(8192 + PhaseScopeData::MaxPoints);
+    setTooltip("Phase Scope: the stereo image as mid (up) against side (across). A vertical line is mono; "
+               "a wide or horizontal trace means wide or out-of-phase content. Correlation below 0 (red) warns of "
+               "mono-compatibility problems.");
     startTimerHz(60);
 }
 
@@ -25,7 +29,7 @@ void PhaseScopeModule::timerCallback()
         currentData.correlation = newData.correlation;
         currentData.samplePairs.insert(currentData.samplePairs.end(),
                                         newData.samplePairs.begin(),
-                                        newData.samplePairs.end());
+                                        newData.samplePairs.begin() + newData.numPoints);
         hasNewData = true;
     }
     
@@ -49,10 +53,11 @@ void PhaseScopeModule::timerCallback()
     // The 8192-pair cap above is sufficient to prevent runaway accumulation.
 }
 
-void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
+void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds, float pixelScale)
 {
-    int w = juce::roundToInt(bounds.getWidth());
-    int h = juce::roundToInt(bounds.getHeight());
+    // Rendered at the physical pixel size, so the trace stays sharp at any UI zoom
+    int w = juce::roundToInt(bounds.getWidth() * pixelScale);
+    int h = juce::roundToInt(bounds.getHeight() * pixelScale);
     
     if (w <= 0 || h <= 0)
     {
@@ -65,30 +70,30 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
     
     if (scopeImage.getWidth() != w || scopeImage.getHeight() != h)
     {
-        scopeImage = juce::Image(juce::Image::ARGB, w, h, true);
+        // A software image: its pixels are faded every frame, and on Windows JUCE 8's default
+        // (Direct2D) images would copy back from the GPU for each of those writes
+        scopeImage = juce::Image(juce::Image::ARGB, w, h, true, juce::SoftwareImageType());
     }
-    
-    juce::Graphics g(scopeImage);
 
     // Smooth fading persistence, time-based rather than call-based.
     // The 0.75f factor was tuned for a ~60Hz paint cadence ("snappier trail" than
     // the previous 0.82f), but repaint() is only a request — the OS decides when
-    // it's actually serviced. JUCE's default Windows renderer is unaccelerated
-    // software/GDI (no Direct2D/OpenGL context is enabled anywhere in this
-    // project), so paints land far less regularly there than on macOS's
-    // accelerated compositor. Applying a fixed multiplier once per *call* meant
+    // it's actually serviced. Applying a fixed multiplier once per *call* meant
     // the trail decayed once per (variable-length) paint instead of once per
-    // 1/60s of real time — on a slower/irregular cadence the image faded far
-    // slower than intended, producing the smeared/overly-persistent look seen
-    // on Windows. Scaling the exponent by actual elapsed time keeps the fade
+    // 1/60s of real time. Scaling the exponent by actual elapsed time keeps the fade
     // rate constant in real time no matter how often paint() actually runs.
     double now = juce::Time::getMillisecondCounterHiRes();
     double dtSeconds = (lastDecayTimeMs > 0.0) ? (now - lastDecayTimeMs) / 1000.0 : (1.0 / 60.0);
     dtSeconds = juce::jlimit(0.0, 0.5, dtSeconds); // guard startup / long pauses (hidden module, etc.)
     lastDecayTimeMs = now;
 
+    // Fade before opening the Graphics context: writing the pixels while a context is
+    // drawing into the image (as before) is not allowed, and with JUCE 8's Direct2D images
+    // on Windows the fade could be lost, leaving the trail smeared and over-persistent.
     float decay = (float) std::pow(0.75, dtSeconds * 60.0);
     scopeImage.multiplyAllAlphas(decay);
+
+    juce::Graphics g(scopeImage);
     
     if (currentData.samplePairs.empty())
         return;
@@ -128,7 +133,7 @@ void PhaseScopeModule::updateScopeImage(juce::Rectangle<float> bounds)
         // Newer points shine brightly in metallic gold with soft glow
         float alpha = 0.15f + (ageNorm * 0.75f);
         g.setColour(ff360_labs::AccentGold.withAlpha(alpha));
-        g.drawLine(p1x, p1y, p2x, p2y, 1.4f);
+        g.drawLine(p1x, p1y, p2x, p2y, 1.4f * pixelScale);
     }
 
     // Clear after drawing. Must happen here — after updateScopeImage() has consumed
@@ -205,7 +210,7 @@ void PhaseScopeModule::paintModule(juce::Graphics& g)
     // Draw Polar Scope Glass Panel
     FF360LabsLookAndFeel::drawGlassPanel(g, bounds, 6.0f);
 
-    updateScopeImage(bounds);
+    updateScopeImage(bounds, juce::jmax(1.0f, g.getInternalContext().getPhysicalPixelScaleFactor()));
     
     float cx = bounds.getCentreX();
     float cy = bounds.getCentreY();

@@ -20,6 +20,7 @@ private:
     PeakRmsDSP dsp; // used for ballistics/smoothing logic only on UI thread
     
     MeterData currentSmoothedData;
+    MeterData lastDrawn { 1.0f, 1.0f, 1.0f, 1.0f };
 
     void drawMeterLane(juce::Graphics& g, juce::Rectangle<float> bounds, float peakDb, float rmsDb);
     float jmapDbToHeight(float db, float height);

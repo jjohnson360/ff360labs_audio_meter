@@ -10,20 +10,28 @@
 class LufsMeterModule : public MeterModule, public juce::Timer
 {
 public:
-    LufsMeterModule(AudioFifo<LufsMeterData>& fifoToUse, LufsDSP& dspInstance, juce::AudioProcessorValueTreeState* apvts = nullptr);
+    // onResetRequested clears the measurement on the audio thread (the processor's resetLoudnessSession)
+    LufsMeterModule(AudioFifo<LufsMeterData>& fifoToUse, std::function<void()> onResetRequested,
+                    juce::AudioProcessorValueTreeState* apvts = nullptr);
     ~LufsMeterModule() override;
 
     void paintModule(juce::Graphics& g) override;
     void resizedModule() override;
     
     void timerCallback() override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+
+    // Clears Integrated, LRA and the session maxima (RESET button, double-click)
+    void resetMeasurement();
 
     const ff360_labs::LoudnessTarget& getCurrentTarget() const { return currentTargetProfile; }
 
 private:
     AudioFifo<LufsMeterData>& meterFifo;
-    LufsDSP& lufsDSP;
+    std::function<void()> onReset;
     LufsMeterData currentData;
+    float lastDrawn[3] { 1.0f, 1.0f, 1.0f }; // damper outputs at the last repaint
+    float shownLra = -1.0f, shownIntegrated = 1.0f;
 
     juce::ComboBox targetSelector;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> targetAttachment;

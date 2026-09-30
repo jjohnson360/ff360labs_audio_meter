@@ -3,8 +3,14 @@
 #include "../LookAndFeel/FF360LabsLookAndFeel.h"
 
 VuMeterModule::VuMeterModule(AudioFifo<VuMeterData>& fifoToUse, VuDSP* dsp, juce::AudioProcessorValueTreeState* apvts)
-    : MeterModule("VU METER", MeterModuleType::VU), meterFifo(fifoToUse), vuDSPInstance(dsp)
+    : MeterModule("VU METER", MeterModuleType::VU), meterFifo(fifoToUse)
 {
+    juce::ignoreUnused(dsp);
+    setTooltip("VU meter: average (RMS) level with classic VU ballistics, relative to the calibration "
+               "reference, so 0 VU means the signal sits at that dBFS level.");
+    calibrationSelector.setTooltip("Calibration: the dBFS level that reads 0 VU. -18 dBFS is the usual "
+                                   "broadcast and mixing reference.");
+    debugButton.setTooltip("Timing overlay: plots the DSP ballistics against the needle over the last two seconds.");
     debugHistory.resize(DEBUG_HISTORY_SIZE);
 
     // Populate Calibration Reference Levels
@@ -31,12 +37,9 @@ VuMeterModule::VuMeterModule(AudioFifo<VuMeterData>& fifoToUse, VuDSP* dsp, juce
     calibrationSelector.onChange = [this] {
         int idx = calibrationSelector.getSelectedItemIndex();
         const auto& p = VuDSP::getCalibrationPresets();
+        // The processor reads the parameter each block; the UI only relabels the dial
         if (idx >= 0 && idx < (int)p.size())
-        {
             currentRefLevelDb = p[(size_t)idx].refDb;
-            if (vuDSPInstance != nullptr)
-                vuDSPInstance->setReferenceLevelDb(currentRefLevelDb);
-        }
         repaint();
     };
 
@@ -52,6 +55,7 @@ VuMeterModule::VuMeterModule(AudioFifo<VuMeterData>& fifoToUse, VuDSP* dsp, juce
     addAndMakeVisible(debugButton);
 
 #if JUCE_DEBUG
+    calTestButton.setTooltip("Debug builds: runs the sine calibration suite and shows the results in the overlay.");
     calTestButton.setColour(juce::TextButton::buttonColourId, ff360_labs::ContainerDark);
     calTestButton.setColour(juce::TextButton::textColourOffId, ff360_labs::AccentGold);
     calTestButton.onClick = [this] {
@@ -98,7 +102,13 @@ void VuMeterModule::timerCallback()
     debugHistory[debugWriteIndex] = s;
     debugWriteIndex = (debugWriteIndex + 1) % DEBUG_HISTORY_SIZE;
 
-    repaint();
+    // Repaint only when a needle moved visibly (or the scrolling overlay is showing)
+    if (showDebugOverlay || std::abs(renderedVuL - lastDrawnVuL) > 0.02f || std::abs(renderedVuR - lastDrawnVuR) > 0.02f)
+    {
+        lastDrawnVuL = renderedVuL;
+        lastDrawnVuR = renderedVuR;
+        repaint(getModuleBounds());
+    }
 }
 
 void VuMeterModule::drawVuArcGauge (juce::Graphics& g, juce::Rectangle<float> bounds, float vuValue, const juce::String& channelLabel)

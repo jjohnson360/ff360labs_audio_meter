@@ -1,5 +1,6 @@
 #include "FF360LabsLookAndFeel.h"
 #include "../../Core/Constants.h"
+#include "MeterFonts.h"
 
 FF360LabsLookAndFeel::FF360LabsLookAndFeel()
 {
@@ -20,23 +21,119 @@ FF360LabsLookAndFeel::FF360LabsLookAndFeel()
     setColour(juce::PopupMenu::highlightedTextColourId, Palette::textOffWhite);
 }
 
+namespace
+{
+    struct BrandTypefaces
+    {
+        juce::Typeface::Ptr barlowRegular, barlowMedium, barlowSemiBold, monoRegular, monoMedium;
+
+        static const BrandTypefaces& get()
+        {
+            static const BrandTypefaces instance;
+            return instance;
+        }
+
+    private:
+        BrandTypefaces()
+        {
+            barlowRegular  = load (MeterFonts::BarlowCondensedRegular_ttf,  MeterFonts::BarlowCondensedRegular_ttfSize);
+            barlowMedium   = load (MeterFonts::BarlowCondensedMedium_ttf,   MeterFonts::BarlowCondensedMedium_ttfSize);
+            barlowSemiBold = load (MeterFonts::BarlowCondensedSemiBold_ttf, MeterFonts::BarlowCondensedSemiBold_ttfSize);
+            monoRegular    = load (MeterFonts::JetBrainsMonoRegular_ttf,    MeterFonts::JetBrainsMonoRegular_ttfSize);
+            monoMedium     = load (MeterFonts::JetBrainsMonoMedium_ttf,     MeterFonts::JetBrainsMonoMedium_ttfSize);
+        }
+
+        static juce::Typeface::Ptr load (const char* data, int size)
+        {
+            return (data != nullptr && size > 0) ? juce::Typeface::createSystemTypefaceFor (data, (size_t) size) : nullptr;
+        }
+    };
+
+    constexpr float tooltipMaxWidth = 280.0f;
+    constexpr float tooltipPadX = 8.0f, tooltipPadY = 6.0f;
+
+    juce::TextLayout layoutTooltip (const juce::String& text)
+    {
+        juce::AttributedString s;
+        s.setJustification (juce::Justification::topLeft);
+        s.append (text, FF360LabsLookAndFeel::getUiFont (14.0f), FF360LabsLookAndFeel::Palette::textOffWhite);
+
+        juce::TextLayout layout;
+        layout.createLayout (s, tooltipMaxWidth);
+        return layout;
+    }
+}
+
 juce::Font FF360LabsLookAndFeel::getCustomFont(float height, int styleFlags)
 {
-    // Was hardcoded to "Consolas" (Windows-only, silently falls back on macOS).
-    // juce::Font::getDefaultMonospacedFontName() resolves per-platform (Consolas on
-    // Windows, Menlo on macOS) while keeping the same technical/mono identity used
-    // throughout every module's data labels and scale ticks.
+    const auto& tfs = BrandTypefaces::get();
+    const bool bold = (styleFlags & juce::Font::bold) != 0;
+    if (auto tf = bold ? tfs.monoMedium : tfs.monoRegular)
+        return juce::Font (juce::FontOptions (tf).withHeight (height));
+
     return juce::FontOptions(height, styleFlags).withName(juce::Font::getDefaultMonospacedFontName());
 }
 
 juce::Font FF360LabsLookAndFeel::getNumericReadoutFont(float height)
 {
-    return juce::FontOptions(height, juce::Font::bold).withName(juce::Font::getDefaultMonospacedFontName());
+    return getCustomFont (height, juce::Font::bold);
 }
 
 juce::Font FF360LabsLookAndFeel::getUiFont(float height, int styleFlags)
 {
-    return juce::FontOptions(height, styleFlags).withName(juce::Font::getDefaultSansSerifFontName());
+    const auto& tfs = BrandTypefaces::get();
+    const bool bold = (styleFlags & juce::Font::bold) != 0;
+    if (auto tf = bold ? tfs.barlowSemiBold : tfs.barlowMedium)
+        return juce::Font (juce::FontOptions (tf).withHeight (height));
+
+   #if JUCE_MAC
+    return juce::FontOptions ("Avenir Next Condensed", height, styleFlags);
+   #else
+    return juce::FontOptions ("Bahnschrift", height, styleFlags);
+   #endif
+}
+
+juce::Typeface::Ptr FF360LabsLookAndFeel::getTypefaceForFont (const juce::Font& font)
+{
+    if (font.getTypefaceName() == juce::Font::getDefaultSansSerifFontName())
+    {
+        const auto& tfs = BrandTypefaces::get();
+        if (auto tf = font.isBold() ? tfs.barlowSemiBold : tfs.barlowRegular)
+            return tf;
+    }
+
+    return juce::LookAndFeel_V4::getTypefaceForFont (font);
+}
+
+juce::Font FF360LabsLookAndFeel::getPopupMenuFont()                    { return getUiFont (15.0f); }
+juce::Font FF360LabsLookAndFeel::getComboBoxFont (juce::ComboBox& box) { return getUiFont (juce::jmin (15.0f, (float) box.getHeight() * 0.62f)); }
+juce::Font FF360LabsLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight) { return getUiFont (juce::jmin (15.0f, (float) buttonHeight * 0.66f)); }
+juce::Font FF360LabsLookAndFeel::getAlertWindowTitleFont()             { return getUiFont (18.0f, juce::Font::bold); }
+juce::Font FF360LabsLookAndFeel::getAlertWindowMessageFont()           { return getUiFont (15.0f); }
+juce::Font FF360LabsLookAndFeel::getAlertWindowFont()                  { return getUiFont (14.0f); }
+
+juce::Rectangle<int> FF360LabsLookAndFeel::getTooltipBounds (const juce::String& tipText, juce::Point<int> screenPos,
+                                                             juce::Rectangle<int> parentArea)
+{
+    const auto layout = layoutTooltip (tipText);
+    const int w = juce::roundToInt (layout.getWidth() + 2.0f * tooltipPadX) + 1;
+    const int h = juce::roundToInt (layout.getHeight() + 2.0f * tooltipPadY) + 1;
+
+    // Below-right of the pointer, flipped to stay inside the parent area
+    const int x = screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 12) : screenPos.x + 12;
+    const int y = screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 8) : screenPos.y + 18;
+    return juce::Rectangle<int> (x, y, w, h).constrainedWithin (parentArea);
+}
+
+void FF360LabsLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
+{
+    const auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
+    g.setColour (Palette::backgroundDark);
+    g.fillRoundedRectangle (bounds, 4.0f);
+    g.setColour (Palette::hairlineBorder.withAlpha (0.45f));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
+
+    layoutTooltip (text).draw (g, bounds.reduced (tooltipPadX, tooltipPadY));
 }
 
 void FF360LabsLookAndFeel::drawGlassPanel (juce::Graphics& g, juce::Rectangle<float> bounds, float cornerRadius)
@@ -167,7 +264,7 @@ void FF360LabsLookAndFeel::drawButtonText (juce::Graphics& g,
                                            bool /*shouldDrawButtonAsHighlighted*/,
                                            bool shouldDrawButtonAsDown)
 {
-    juce::Font font = getUiFont(12.5f, juce::Font::plain);
+    juce::Font font = getTextButtonFont(button, button.getHeight());
     g.setFont(font);
 
     bool isActive = shouldDrawButtonAsDown || button.getToggleState();
@@ -204,7 +301,7 @@ void FF360LabsLookAndFeel::drawToggleButton (juce::Graphics& g,
     }
 
     g.setColour(button.getToggleState() ? Palette::textOffWhite : Palette::textMuted);
-    g.setFont(getUiFont(12.5f));
+    g.setFont(getUiFont(14.5f));
     g.drawText(button.getButtonText(),
                bounds.withTrimmedLeft(tickBounds.getRight() + 6.0f).toNearestInt(),
                juce::Justification::centredLeft, true);
@@ -284,7 +381,7 @@ void FF360LabsLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
         g.setColour(isActive ? Palette::textOffWhite : Palette::textMuted);
     }
 
-    g.setFont(getUiFont(12.5f));
+    g.setFont(getPopupMenuFont());
     g.drawText(text, area.reduced(10, 0), juce::Justification::centredLeft, true);
 }
 
