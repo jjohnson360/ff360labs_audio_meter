@@ -12,7 +12,8 @@ enum class MeterModuleType
     Unknown
 };
 
-class MeterModule : public juce::Component
+class MeterModule : public juce::Component,
+                    public juce::SettableTooltipClient
 {
 public:
     MeterModule(const juce::String& name, MeterModuleType type);

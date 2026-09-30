@@ -1,23 +1,47 @@
 # ff360_labs Modular Audio Meter — Progress & Release Report
 
 **Project**: `ff360labs_audio_meter`  
-**Version**: `Beta v1.2.3`  
-**Release Date & Time**: `August 26, 2026`  
+**Version**: `Beta v1.3.0`  
+**Release Date & Time**: `September 30, 2026`  
 **Author / Organization**: `ff360 Labs` (`jjohnson360`)  
 **Target Platforms**: Windows 10/11 (x64) & macOS 12+ (Universal Binary: Apple Silicon / Intel)  
-**Build Status**: ✅ Clean — MSVC 2022 Release, exit code 0, zero errors
+**Build Status**: ✅ Clean — MSVC 2022 Release; processor tests 91/91
 
 ---
 
 ## Executive Summary
 
-The **ff360_labs Modular Audio Meter** is an extensible, hardware-styled audio analysis and mastering suite built with **C++20** and **JUCE 8.0.4**. Beta v1.2.3 delivers **Phase 12** — a fix for a Phase Scope rendering issue reported on Windows, and a UI style pass that tightens the app's typography, chrome coloring, and dashboard spacing to better match the project's reference dashboard mockup.
+The **ff360_labs Modular Audio Meter** is an extensible, hardware-styled audio analysis and mastering suite built with **C++20** and **JUCE 8.0.4**. Beta v1.3.0 delivers **Phase 13**: the house-style pass shared with Apex360, Niche360 and the other ff360 Labs plugins. A new processor test suite found and fixed several measurement errors (VU, LUFS gating and mono, spectrum level, missed peaks), the audio thread no longer allocates, and the UI gains embedded brand fonts, tooltips everywhere and DPI-aware zoom.
 
 ---
 
 ## Phase-by-Phase Development Log
 
-### Phase 12: Windows Rendering Fix & Mockup Style Alignment ← **CURRENT**
+### Phase 13: House-Style Pass ← **CURRENT**
+
+See [CHANGELOG.md](./CHANGELOG.md) (Beta v1.3.0) for every item.
+
+#### 13.1 — Measurement fixes (found by the new test suite)
+- VU no longer reads ~1.2 dB hot on steady tones (symmetric RMS integration before the ballistics).
+- LUFS gating and LRA count only complete windows (Integrated was ~0.2 LU low after each reset; a steady tone showed ~9 LU LRA); mono input no longer reads 3 dB hot.
+- Spectrum levels are calibrated (a 0 dBFS sine reads 0 dB, was -6 dB); the FFT resolution selector now works.
+- Peak meter catches negative-going peaks and every block's peak between UI frames.
+- Session report uses the real session maxima, peaks and selected target.
+
+#### 13.2 — Stability
+- Phase Scope fade no longer writes to its image while drawing into it (Direct2D on Windows could drop the fade, smearing the trail).
+- Nothing allocates on the audio thread (fixed-size frames; verified by the tests); LUFS reset is performed by the audio thread.
+- Audio settings dialog leak fixed; the current layout is saved to the session as soon as it changes.
+
+#### 13.3 — House style
+- Embedded Barlow Condensed and JetBrains Mono; tooltips on every control and module; double-click resets for LUFS and the histogram.
+- DPI-aware UI zoom (75%-200%), sharp at any size, saved with the session with the window size.
+- Meters repaint only when their values change.
+
+#### 13.4 — Build & CI
+- Processor test suite (91 checks) run in CI on Windows and macOS; Ninja builds; ad-hoc signing and `auval` on macOS; releases tagged at the built commit, prerelease by default.
+
+### Phase 12: Windows Rendering Fix & Mockup Style Alignment
 
 #### 12.1 — Phase Scope Persistence Decay Fix (Windows)
 - **Symptom**: on Windows, the Phase Scope's Lissajous persistence trail appeared smeared/overly persistent instead of the intended "snappier" fading trail.
@@ -191,11 +215,11 @@ Two root-cause DSP accuracy bugs were discovered and fixed:
 
 ## Installation & Deployment Guide
 
-### Windows 10/11 (x64) — Beta v1.2.1
+### Windows 10/11 (x64) — Beta v1.3.0
 
 > **Beta:** This release is pre-release software. Verify calibration via the `CAL TEST` button in the VU module (debug build) or against a known reference signal before use in production sessions.
 
-1. Extract `FF360Meter_v1.2.0-beta_Windows_x64.zip`.
+1. Extract `FF360Meter_v1.3.0-beta_Windows_x64.zip`.
 2. Copy `FF360Meter.vst3` to your system VST3 directory:
    ```text
    C:\Program Files\Common Files\VST3\
@@ -203,11 +227,11 @@ Two root-cause DSP accuracy bugs were discovered and fixed:
 3. To run standalone, launch `FF360Meter.exe`.
 4. For system audio monitoring: open **⚙ Settings → Audio I/O Settings** and select a Stereo Mix / WASAPI loopback / VB-Cable input device.
 
-### macOS 12 and Later (Apple Silicon & Intel) — Beta v1.2.1
+### macOS 12 and Later (Apple Silicon & Intel) — Beta v1.3.0
 
 > **Beta:** Universal Binary (arm64 + x86_64). Notarization not yet applied for this beta build. macOS may require manual security approval on first launch: **System Settings → Privacy & Security → Open Anyway**.
 
-1. Extract `FF360Meter_v1.2.0-beta_macOS_Universal.zip`.
+1. Extract `FF360Meter_v1.3.0-beta_macOS_Universal.zip`.
 2. Copy `FF360Meter.vst3` to:
    ```text
    /Library/Audio/Plug-Ins/VST3/
@@ -226,9 +250,9 @@ Two root-cause DSP accuracy bugs were discovered and fixed:
 | # | Issue | Status |
 |---|---|---|
 | B-01 | macOS notarization not applied — Gatekeeper requires manual approval on first launch | Open |
-| B-02 | UI Size scaling uses `setSize()` — does not scale internal font or HiDPI contexts; proper DPI-aware scaling deferred to v1.3 | Open |
+| B-02 | UI Size scaling uses `setSize()` — does not scale internal font or HiDPI contexts | Fixed in v1.3.0 (UI zoom) |
 | B-03 | `CAL TEST` button only available in Debug builds — no release-mode calibration report | By design |
-| B-04 | Phase Scope persistence trail speed tied to timer rate — may differ slightly at non-60Hz display rates | Open |
+| B-04 | Phase Scope persistence trail speed tied to timer rate — may differ slightly at non-60Hz display rates | Fixed in v1.2.3 / v1.3.0 |
 
 ---
 

@@ -4,6 +4,43 @@ All notable changes to the **ff360_labs Modular Audio Meter** are documented in 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to beta-stage [Semantic Versioning](https://semver.org/) (`0.x`/`Beta` releases may include breaking changes between minor versions).
 
+## [Beta v1.3.0] — 2026-09-30
+
+Phase 13 — house-style pass, bringing the meter in line with Apex360, Niche360 and the other ff360 Labs plugins: measurement fixes found by a new processor test suite, embedded brand fonts, tooltips, DPI-aware UI zoom, and the shared CI pipeline.
+
+### Fixed — measurement accuracy
+- **VU read ~1.2 dB hot on steady tones**: the attack / release ballistics ran per sample on instantaneous power (x²), which swings between zero and the peak twice per cycle, so the asymmetric integrator settled above the true mean. Power is now integrated symmetrically first (true RMS), then the ballistics act on that. A -20 dBFS sine reads -5.01 VU at the -18 dBFS reference, as `CalibrationTest.h` always claimed.
+- **Integrated LUFS read ~0.2 LU low after every start or reset, and a steady tone showed ~9 LU of LRA**: the partial 400 ms / 3 s windows right after a reset were counted as gating blocks. Only complete windows count now (BS.1770-4 / EBU Tech 3342). EBU Tech 3341 case 1 (-23 dBFS stereo 1 kHz) reads -23.0 LUFS.
+- **Mono input read 3 dB hot in LUFS**: a mono channel was counted as both L and R.
+- **Spectrum read every tone 6 dB low**: the FFT magnitude was normalised by N/2, ignoring the Hann window's coherent gain. A 0 dBFS sine now reads 0 dB at every FFT size. The 3-bin smoothing is peak-preserving (a plain dB average pulled a pure tone down ~4 dB) and no longer feeds back into the peak-hold state, which blurred it further every frame.
+- **Spectrum FFT resolution selector did nothing**: it had no handler. It now switches the analyser (without allocating on the audio thread) and is saved with the session.
+- **Peak meter missed negative-going peaks**: it used the largest signed sample. It now uses the absolute magnitude.
+- **Peak meter dropped peaks between UI frames**: only the newest audio block was drawn each frame, discarding the peaks of the other ~5-20 blocks. The meter now takes the highest peak (and power-averaged RMS) of every block since the last frame.
+- **Session report exported the current, not maximum, short-term / momentary loudness, fixed -60 dB peaks, and always the first delivery target**: it now uses the session maxima, the highest sample peaks since the last reset, and the selected target.
+
+### Fixed — stability and rendering
+- **Phase Scope trail on Windows**: the fade (`multiplyAllAlphas`) was applied while a `Graphics` context was drawing into the same image. With JUCE 8's Direct2D images on Windows that isn't allowed (it asserted in debug builds) and the fade could be lost, leaving the trail smeared. The fade now happens before drawing, into a software image rendered at the physical pixel size. This is likely the underlying cause of the smear v1.2.3 addressed.
+- **No allocation on the audio thread**: Phase Scope and Spectrum frames were `std::vector`s built and copied into the FIFO every block, and the spectrum's smoothing allocated per frame. Frames are fixed-size now and FIFO capacity is per queue; a test counts allocations inside `processBlock` (0 at 44.1 / 48 / 96 kHz, blocks of 32-4096).
+- **LUFS RESET raced the audio thread**: it reset the DSP (buffers, filters, histograms) from the UI thread mid-block. Resets are requested atomically and performed by the audio thread; the readouts are atomics.
+- **Audio settings dialog leaked**: closing it removed it from the editor without deleting it.
+- **Current layout only reached the session when the editor closed**: it is saved as soon as modules or the layout mode change, so a host save with the window open keeps it.
+- Only the main input bus is metered; the processor tolerates a zero-channel buffer.
+
+### Added
+- **Brand fonts**: Barlow Condensed (chrome, menus, dialogs, tooltips) and JetBrains Mono (readouts, scales), embedded as in Niche360 (SIL OFL 1.1), so text looks the same on every machine.
+- **Tooltips on every control and module**, drawn in the house style. (The editor had tooltip text but no `TooltipWindow`, so none ever showed.)
+- **DPI-aware UI zoom (75%-200%)**: the whole interface is laid out at (window size / zoom) and scaled, so text and meters stay sharp; detached module windows scale too. Zoom and window size are saved with the session. Replaces the UI Size menu, which only resized the window (and whose 50% step was below the minimum size). Resizing stays free-aspect, for wide or tall dashboards.
+- **Double-click to reset** the LUFS meter (Integrated, LRA, session maxima) and the histogram.
+- **Processor test suite** (`Tests/ProcessorTests.cpp`, 91 checks): sine calibration for peak, RMS, VU and LUFS at 44.1 / 48 / 96 kHz, EBU reference, mono, spectrum calibration per FFT size, correlation, resets, DEV OSC, pass-through, no allocations, and editor checks (tooltips, fonts, zoom, session restore, live layout saving). JUCE assertions and leaks fail the run. `--screenshot <png> [scale] [layout]` renders the editor; see `docs/screenshots`.
+
+### Changed
+- Meters repaint only when a value visibly changes (the VU and LUFS modules repainted 60 times a second even when idle); the editor is opaque.
+- **CI** (matches Drum Bus and the global CI rules): Ninja on both platforms, the test suite runs on Windows and macOS, macOS bundles are signed ad hoc and validated with `auval`, zips are made with `ditto`, releases are tagged at the commit that was built and are prereleases by default, and a manual run without a version builds and tests without publishing. Release zips are named `FF360Meter_<tag>-beta_...`, matching the install instructions.
+- `FF360_COPY_PLUGINS_AFTER_BUILD` (on locally, off in CI) controls installing the plugins after a build; `JUCE_DISPLAY_SPLASH_SCREEN=0`; VST3 category `Fx Analyzer`.
+- The AU / VST3 codes (`F360` / `F301`) are unchanged so existing sessions keep loading the plugin, although the global rules now ask for letters-only codes.
+
+---
+
 ## [Beta v1.2.3] — 2026-08-26
 
 Phase 12 — Windows Phase Scope rendering fix and a UI style pass toward the reference dashboard mockup.

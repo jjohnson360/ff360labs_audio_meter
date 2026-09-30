@@ -1,10 +1,10 @@
-﻿# ff360_labs Modular Audio Meter
+# ff360_labs Modular Audio Meter
 
-**Beta v1.2.3** — A professional, modular audio metering and mastering analysis suite built with C++20 and JUCE 8.
+**Beta v1.3.0** — A professional, modular audio metering and mastering analysis suite built with C++20 and JUCE 8.
 
 > **Beta Notice**: This is a pre-release beta build. Core metering accuracy has been audited and verified against reference sine tones through Phase 10. Please report any measurement discrepancies or platform-specific issues.
 
-See [CHANGELOG.md](./CHANGELOG.md) for the full version history, including the Beta v1.2.3 Phase Scope rendering fix and UI style pass, the Beta v1.2.1 Phase Scope hotfix, and the Beta v1.2.0 calibration audit.
+See [CHANGELOG.md](./CHANGELOG.md) for the full version history, including the Beta v1.3.0 house-style pass (measurement fixes, brand fonts, tooltips, DPI-aware zoom, test suite), the Beta v1.2.3 Phase Scope rendering fix and UI style pass, the Beta v1.2.1 Phase Scope hotfix, and the Beta v1.2.0 calibration audit.
 
 ---
 
@@ -19,7 +19,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full version history, including the B
 - **Grid & Focus Layouts**: Auto-flowing responsive grid layouts and single-module focus mode.
 - **Factory Layout Presets**: Built-in suites (*Mastering*, *Broadcast QC*, *Quick Check*, *Full Suite*) with custom layout saving and APVTS session recall.
 - **Detachable Floating Windows**: Pop out any module into an always-on-top, resizable floating window with seamless re-docking on close.
-- **Consolidated Settings Menu (⚙)**: Audio I/O, Export, Accessibility, Grid/Focus mode, UI Size (50%–200%), Full Screen, and About — all accessible from a single top-left dropdown. Nav bar reduces to: branding | ⚙ | Add Module | Layout preset | two status dots.
+- **Consolidated Settings Menu (⚙)**: Audio I/O, Export, Accessibility, Grid/Focus mode, UI Size (75%–200% zoom, saved with the session), Full Screen, and About — all accessible from a single top-left dropdown. Nav bar reduces to: branding | ⚙ | Add Module | Layout preset | two status dots.
 - **Per-Module Options Menu (⋮)**: Each module header shows a single kebab dropdown with Resize, Detach to Window, and Close/Remove entries, consistent across all module types.
 
 ### 2. Metering Suite
@@ -50,11 +50,11 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full version history, including the B
 
 ## Installation & Deployment Guide
 
-### Windows 10/11 (x64) — Beta v1.2.3
+### Windows 10/11 (x64) — Beta v1.3.0
 
 > **Beta:** This release is pre-release software. Verify calibration via the `CAL TEST` button in the VU module (debug build) or against a known reference signal before use in production sessions.
 
-1. Extract `FF360Meter_v1.2.3-beta_Windows_x64.zip`.
+1. Extract `FF360Meter_v1.3.0-beta_Windows_x64.zip`.
 2. Copy `FF360Meter.vst3` to your system VST3 directory:
    ```text
    C:\Program Files\Common Files\VST3\
@@ -62,11 +62,11 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full version history, including the B
 3. To run standalone, launch `FF360Meter.exe`.
 4. For system audio monitoring: open **⚙ Settings → Audio I/O Settings** and select a Stereo Mix / WASAPI loopback / VB-Cable input device.
 
-### macOS 12 and Later (Apple Silicon & Intel) — Beta v1.2.3
+### macOS 12 and Later (Apple Silicon & Intel) — Beta v1.3.0
 
-> **Beta:** Universal Binary (arm64 + x86_64). Notarization not yet applied for this beta build. macOS may require manual security approval on first launch: **System Settings → Privacy & Security → Open Anyway**.
+> **Beta:** Universal Binary (arm64 + x86_64), signed ad hoc. Notarization not yet applied for this beta build. macOS may require manual security approval on first launch: **System Settings → Privacy & Security → Open Anyway**.
 
-1. Extract `FF360Meter_v1.2.3-beta_macOS_Universal.zip`.
+1. Extract `FF360Meter_v1.3.0-beta_macOS_Universal.zip`.
 2. Copy `FF360Meter.vst3` to:
    ```text
    /Library/Audio/Plug-Ins/VST3/
@@ -85,9 +85,9 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full version history, including the B
 | # | Issue | Status |
 |---|---|---|
 | B-01 | macOS notarization not applied — Gatekeeper requires manual approval on first launch | Open |
-| B-02 | UI Size scaling uses `setSize()` — does not scale internal font or HiDPI contexts; proper DPI-aware scaling deferred to v1.3 | Open |
+| B-02 | UI Size scaling uses `setSize()` — does not scale internal font or HiDPI contexts | Fixed in v1.3.0 (UI zoom) |
 | B-03 | `CAL TEST` button only available in Debug builds — no release-mode calibration report | By design |
-| B-04 | Phase Scope persistence trail speed tied to timer rate — may differ slightly at non-60Hz display rates | Open |
+| B-04 | Phase Scope persistence trail speed tied to timer rate — may differ slightly at non-60Hz display rates | Fixed in v1.2.3 / v1.3.0 |
 
 ---
 
@@ -98,7 +98,16 @@ cmake -B build -S .
 
 # Build (VST3 and Standalone)
 cmake --build build --config Release
+
+# Processor tests (calibration, allocation-free audio thread, editor checks)
+cmake --build build --config Release --target FF360Meter_ProcessorTests
+build/FF360Meter_ProcessorTests_artefacts/Release/FF360Meter_ProcessorTests
+
+# Render the editor to a PNG: --screenshot <file.png> [scale] [layout]
+build/FF360Meter_ProcessorTests_artefacts/Release/FF360Meter_ProcessorTests --screenshot docs/screenshots/full_suite_1x.png 1 "Full Suite"
 ```
+
+Local builds install the plugins into the system plugin folders after they build; configure with `-DFF360_COPY_PLUGINS_AFTER_BUILD=OFF` to skip that (CI does).
 
 ### System Requirements
 - JUCE 8.x
@@ -111,3 +120,6 @@ cmake --build build --config Release
 ## Release Notes
 
 Full details for every release, including bug fixes, new features, and polish items, now live in [CHANGELOG.md](./CHANGELOG.md).
+
+## Credits
+Barlow Condensed (The Barlow Project Authors) and JetBrains Mono (The JetBrains Mono Project Authors) are embedded under the SIL Open Font License 1.1; see `Source/GUI/LookAndFeel/Fonts/`.

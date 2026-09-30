@@ -5,87 +5,114 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-
-permissions:
-  contents: write
+    inputs:
+      version:
+        description: 'Release tag (e.g. v1.3.0). Leave empty to build and test without publishing.'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark the release as a prerelease (unchecked releases become "Latest")'
+        type: boolean
+        default: true
 
 jobs:
   build-windows:
-    name: Build Windows 11 (x64)
+    name: Build & test Windows x64 (VST3, Standalone)
     runs-on: windows-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
-        run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build Targets
-        run: |
-          cmake --build build --config Release --parallel
+      - name: Build
+        run: cmake --build build --target FF360Meter_VST3 FF360Meter_Standalone FF360Meter_ProcessorTests
+
+      - name: Run processor tests
+        run: build/FF360Meter_ProcessorTests_artefacts/Release/FF360Meter_ProcessorTests.exe
 
       - name: Package Windows Artifacts
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v1.2.1" }
-          New-Item -ItemType Directory -Force -Path package_win
+          $tag = if ("${{ inputs.version }}") { "${{ inputs.version }}" } else { "${{ github.ref_name }}" }
+          New-Item -ItemType Directory -Force -Path package_win, artifacts | Out-Null
           Copy-Item -Path "build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3" -Destination "package_win/" -Recurse
           Copy-Item -Path "build/FF360Meter_artefacts/Release/Standalone/FF360Meter.exe" -Destination "package_win/"
-          Compress-Archive -Path "package_win/*" -DestinationPath "FF360Meter_${tag}_Windows_x64.zip"
+          Compress-Archive -Path "package_win/*" -DestinationPath "artifacts/FF360Meter_${tag}-beta_Windows_x64.zip"
 
-      - name: Upload Windows Asset
+      - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Windows_x64_Package
-          path: "*.zip"
+          name: windows
+          path: artifacts/*.zip
 
   build-macos:
-    name: Build macOS 12+ (Universal Binary)
+    name: Build & test macOS 12+ (VST3, AU, Standalone - Universal)
     runs-on: macos-14
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure CMake (Universal arm64 + x86_64)
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Configure CMake (Universal macOS 12.0+)
         run: |
-          cmake -B build -S . \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
-      - name: Build Targets
-        run: |
-          cmake --build build --config Release --parallel
+      - name: Build
+        run: cmake --build build --target FF360Meter_VST3 FF360Meter_AU FF360Meter_Standalone FF360Meter_ProcessorTests
 
-      - name: Package macOS Artifacts
-        run: |
-          TAG="${GITHUB_REF_NAME:-v1.2.1}"
-          mkdir -p package_mac
-          cp -R build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3 package_mac/ || true
-          cp -R build/FF360Meter_artefacts/Release/AU/FF360Meter.component package_mac/ || true
-          cp -R build/FF360Meter_artefacts/Release/Standalone/FF360Meter.app package_mac/ || true
-          cd package_mac && zip -r "../FF360Meter_${TAG}_macOS_Universal.zip" . && cd ..
+      - name: Run processor tests
+        run: build/FF360Meter_ProcessorTests_artefacts/Release/FF360Meter_ProcessorTests
 
-      - name: Upload macOS Asset
+      # Without a Developer ID, sign ad hoc so Apple Silicon hosts will load the universal binaries
+      - name: Ad-hoc code sign
+        run: |
+          cd build/FF360Meter_artefacts/Release
+          codesign --force --deep --sign - "VST3/FF360Meter.vst3"
+          codesign --force --deep --sign - "AU/FF360Meter.component"
+          codesign --force --deep --sign - "Standalone/FF360Meter.app"
+
+      - name: Validate AU (auval)
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "build/FF360Meter_artefacts/Release/AU/FF360Meter.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx F301 F360
+
+      # Developer ID signing and notarization need Apple credentials as secrets:
+      # APPLE_DEVELOPER_ID, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID. With them, replace
+      # the ad-hoc step with `codesign --options runtime --sign "Developer ID Application: ..."`,
+      # then `xcrun notarytool submit ... --wait` and `xcrun stapler staple` on each bundle.
+
+      - name: Package macOS Artifacts (Preserving Bundles)
+        run: |
+          TAG="${{ inputs.version || github.ref_name }}"
+          mkdir -p package_mac artifacts
+          cp -R build/FF360Meter_artefacts/Release/VST3/FF360Meter.vst3 package_mac/
+          cp -R build/FF360Meter_artefacts/Release/AU/FF360Meter.component package_mac/
+          cp -R build/FF360Meter_artefacts/Release/Standalone/FF360Meter.app package_mac/
+          ditto -c -k --sequesterRsrc package_mac "artifacts/FF360Meter_${TAG}-beta_macOS_Universal.zip"
+
+      - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macOS_Universal_Package
-          path: "*.zip"
+          name: macos
+          path: artifacts/*.zip
 
-  create-release:
+  publish-release:
     name: Publish GitHub Release
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     permissions:
       contents: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -93,14 +120,25 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          merge-multiple: true
+          path: artifacts
+
+      - name: Verify Bundle Paths and Structure
+        run: |
+          unzip -l artifacts/macos/*.zip | grep "FF360Meter.vst3/Contents/Info.plist"
+          unzip -l artifacts/macos/*.zip | grep "FF360Meter.component/Contents/Info.plist"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: "*.zip"
+          tag_name: ${{ inputs.version || github.ref_name }}
+          # Without this a manual run creates the tag on the default branch, not the commit that was built
+          target_commitish: ${{ github.sha }}
+          # Tag pushes have no inputs, so they default to prerelease; a manual run with the box unchecked becomes "Latest"
+          prerelease: ${{ github.event.inputs.prerelease != 'false' }}
           body_path: FF360LABS_AUDIO_METER_PROGRESS_REPORT.md
-          draft: false
-          prerelease: false
-
+          generate_release_notes: true
+          files: |
+            artifacts/windows/*.zip
+            artifacts/macos/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

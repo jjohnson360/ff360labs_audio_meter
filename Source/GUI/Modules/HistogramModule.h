@@ -7,16 +7,18 @@
 class HistogramModule : public MeterModule, public juce::Timer
 {
 public:
-    HistogramModule(AudioFifo<HistogramData>& fifoToUse, std::function<void()> onResetCallback);
+    HistogramModule(AudioFifo<HistogramData, 32>& fifoToUse, std::function<void()> onResetCallback);
     ~HistogramModule() override;
 
     void paintModule(juce::Graphics& g) override;
     void resizedModule() override;
     
     void timerCallback() override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void resetHistogram();
 
 private:
-    AudioFifo<HistogramData>& meterFifo;
+    AudioFifo<HistogramData, 32>& meterFifo;
     std::function<void()> onReset;
     HistogramData currentData;
     HistogramData snapshotA;

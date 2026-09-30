@@ -1,58 +1,69 @@
-﻿#include "SpectrumDSP.h"
+#include "SpectrumDSP.h"
 #include <cmath>
 #include <algorithm>
-#include <numeric>
 
 SpectrumDSP::SpectrumDSP()
 {
-    initBuffers();
+    for (int i = 0; i < NumOrders; ++i)
+    {
+        const int size = 1 << (MinOrder + i);
+        ffts[(size_t) i] = std::make_unique<juce::dsp::FFT>(MinOrder + i);
+        windows[(size_t) i].resize((size_t) size);
+        juce::dsp::WindowingFunction<float>::fillWindowingTables(windows[(size_t) i].data(), (size_t) size,
+                                                                 juce::dsp::WindowingFunction<float>::hann, false);
+    }
+
+    fifoL.assign((size_t) MaxFFTSize, 0.0f);
+    fifoR.assign((size_t) MaxFFTSize, 0.0f);
+    fftData.assign((size_t) MaxFFTSize * 2, 0.0f);
+    smoothedMagnitudesL.assign((size_t) MaxFFTSize / 2, -100.0f);
+    smoothedMagnitudesR.assign((size_t) MaxFFTSize / 2, -100.0f);
 }
 
-void SpectrumDSP::initBuffers()
+void SpectrumDSP::resetState()
 {
-    fft    = std::make_unique<juce::dsp::FFT>(fftOrder);
-    window = std::make_unique<juce::dsp::WindowingFunction<float>>(
-                 static_cast<size_t>(fftSize),
-                 juce::dsp::WindowingFunction<float>::hann);
-
-    fifoL.assign(static_cast<size_t>(fftSize), 0.0f);
-    fifoR.assign(static_cast<size_t>(fftSize), 0.0f);
-    fftDataL.assign(static_cast<size_t>(fftSize) * 2, 0.0f);
-    fftDataR.assign(static_cast<size_t>(fftSize) * 2, 0.0f);
-    smoothedMagnitudesL.assign(static_cast<size_t>(numBins), -100.0f);
-    smoothedMagnitudesR.assign(static_cast<size_t>(numBins), -100.0f);
     fifoIndex = 0;
+    std::fill(smoothedMagnitudesL.begin(), smoothedMagnitudesL.end(), -100.0f);
+    std::fill(smoothedMagnitudesR.begin(), smoothedMagnitudesR.end(), -100.0f);
+}
+
+void SpectrumDSP::updateDecayRate()
+{
+    // 0.18s time constant for smoother peak decay (Phase 10.5)
+    float framesPerSecond = static_cast<float>(currentSampleRate) / static_cast<float>(getFFTSize());
+    if (framesPerSecond > 0)
+        decayRate = std::exp(-1.0f / (0.18f * framesPerSecond));
 }
 
 void SpectrumDSP::prepare(double sampleRate, int /*samplesPerBlock*/)
 {
     currentSampleRate = sampleRate;
-    initBuffers();
-
-    // 0.18s time constant for smoother peak decay (Phase 10.5)
-    float framesPerSecond = static_cast<float>(sampleRate) / static_cast<float>(fftSize);
-    if (framesPerSecond > 0)
-        decayRate = std::exp(-1.0f / (0.18f * framesPerSecond));
+    activeOrder = requestedOrder.load();
+    updateDecayRate();
+    resetState();
 }
 
 void SpectrumDSP::setFFTResolution(FFTResolution resolution)
 {
-    currentResolution = resolution;
-    fftOrder = static_cast<int>(resolution);
-    fftSize  = 1 << fftOrder;
-    numBins  = fftSize / 2;
-
-    float framesPerSecond = static_cast<float>(currentSampleRate) / static_cast<float>(fftSize);
-    if (framesPerSecond > 0)
-        decayRate = std::exp(-1.0f / (0.18f * framesPerSecond));
-
-    initBuffers();
+    requestedOrder.store(juce::jlimit(MinOrder, MaxOrder, static_cast<int>(resolution)));
 }
 
 bool SpectrumDSP::processBlock(const juce::AudioBuffer<float>& buffer, SpectrumData& outData)
 {
     int numChannels = buffer.getNumChannels();
     int numSamples  = buffer.getNumSamples();
+    if (numChannels == 0 || numSamples == 0)
+        return false;
+
+    if (const int order = requestedOrder.load(); order != activeOrder)
+    {
+        activeOrder = order;
+        updateDecayRate();
+        resetState();
+    }
+
+    const int fftSize = getFFTSize();
+    const int numBins = getNumBins();
 
     const float* channelDataL = buffer.getReadPointer(0);
     const float* channelDataR = numChannels > 1 ? buffer.getReadPointer(1) : channelDataL;
@@ -67,15 +78,9 @@ bool SpectrumDSP::processBlock(const juce::AudioBuffer<float>& buffer, SpectrumD
 
         if (fifoIndex >= fftSize)
         {
-            // Process L
-            std::copy(fifoL.begin(), fifoL.end(), fftDataL.begin());
-            std::fill(fftDataL.begin() + fftSize, fftDataL.end(), 0.0f);
-            processFFT(fftDataL, smoothedMagnitudesL);
-
-            // Process R (separate pass through same windowing + FFT machinery)
-            std::copy(fifoR.begin(), fifoR.end(), fftDataR.begin());
-            std::fill(fftDataR.begin() + fftSize, fftDataR.end(), 0.0f);
-            processFFT(fftDataR, smoothedMagnitudesR);
+            processFFT(fifoL, smoothedMagnitudesL);
+            if (numChannels > 1)
+                processFFT(fifoR, smoothedMagnitudesR);
 
             fifoIndex = 0;
             newFftCalculated = true;
@@ -84,28 +89,43 @@ bool SpectrumDSP::processBlock(const juce::AudioBuffer<float>& buffer, SpectrumD
 
     if (newFftCalculated)
     {
-        outData.magnitudesL = smoothedMagnitudesL;
-        outData.magnitudesR = smoothedMagnitudesR;
+        outData.numBins = numBins;
+        outData.hasRight = numChannels > 1;
+        outData.sampleRate = currentSampleRate;
+
+        // 3-bin smoothing for visual smoothness (Phase 10.5). Applied to the output
+        // only: smoothing the peak-hold state itself would blur it further every frame.
+        applyMovingAverage(smoothedMagnitudesL.data(), outData.magnitudesL.data(), numBins);
+        if (outData.hasRight)
+            applyMovingAverage(smoothedMagnitudesR.data(), outData.magnitudesR.data(), numBins);
     }
 
     return newFftCalculated;
 }
 
-void SpectrumDSP::processFFT(std::vector<float>& fftData, std::vector<float>& smoothed)
+void SpectrumDSP::processFFT(const std::vector<float>& fifo, std::vector<float>& smoothed)
 {
+    const int fftSize = getFFTSize();
+    const int numBins = getNumBins();
+    const auto& window = windows[(size_t) (activeOrder - MinOrder)];
+
     // Apply Hann window
-    window->multiplyWithWindowingTable(fftData.data(), static_cast<size_t>(fftSize));
+    juce::FloatVectorOperations::multiply(fftData.data(), fifo.data(), window.data(), fftSize);
+    std::fill(fftData.begin() + fftSize, fftData.begin() + fftSize * 2, 0.0f);
 
     // Perform FFT in-place
-    fft->performFrequencyOnlyForwardTransform(fftData.data());
+    ffts[(size_t) (activeOrder - MinOrder)]->performFrequencyOnlyForwardTransform(fftData.data());
+
+    // A sine of peak amplitude A gives a bin magnitude of A * sum(window) / 2, and a Hann
+    // window sums to N / 2, so dividing by N / 4 makes a 0 dBFS sine read 0 dB.
+    // (Dividing by N / 2, as before, read every tone 6 dB low.)
+    const float normalisation = 4.0f / static_cast<float>(fftSize);
 
     // Convert to dB with peak-hold + decay smoothing
     for (int i = 0; i < numBins; ++i)
     {
-        float magnitude = fftData[static_cast<size_t>(i)];
-        float db = -100.0f;
-        if (magnitude > 0.00001f)
-            db = 20.0f * std::log10(magnitude / (static_cast<float>(fftSize) * 0.5f));
+        float magnitude = fftData[static_cast<size_t>(i)] * normalisation;
+        float db = magnitude > 1.0e-5f ? 20.0f * std::log10(magnitude) : -100.0f;
 
         db = std::max(-100.0f, db);
 
@@ -115,30 +135,26 @@ void SpectrumDSP::processFFT(std::vector<float>& fftData, std::vector<float>& sm
             smoothed[static_cast<size_t>(i)] = smoothed[static_cast<size_t>(i)] * decayRate
                                               + db * (1.0f - decayRate);
     }
-
-    // 3-bin moving average for visual smoothness (Phase 10.5)
-    applyMovingAverage(smoothed, 3);
 }
 
-void SpectrumDSP::applyMovingAverage(std::vector<float>& data, int windowSize)
+void SpectrumDSP::applyMovingAverage(const float* in, float* out, int numBins, int windowSize)
 {
-    if (windowSize < 2 || data.empty()) return;
     int half = windowSize / 2;
-    std::vector<float> tmp(data.size());
-    for (int i = 0; i < static_cast<int>(data.size()); ++i)
+    for (int i = 0; i < numBins; ++i)
     {
         float sum = 0.0f;
         int count = 0;
         for (int k = -half; k <= half; ++k)
         {
             int idx = i + k;
-            if (idx >= 0 && idx < static_cast<int>(data.size()))
+            if (idx >= 0 && idx < numBins)
             {
-                sum += data[static_cast<size_t>(idx)];
+                sum += in[idx];
                 ++count;
             }
         }
-        tmp[static_cast<size_t>(i)] = (count > 0) ? (sum / count) : data[static_cast<size_t>(i)];
+        // Peak-preserving: fills the valleys between bins but never lowers a bin, so a
+        // tone still reads its level (a plain dB average read a pure tone ~4 dB low)
+        out[i] = juce::jmax(in[i], sum / (float) count);
     }
-    data = std::move(tmp);
 }

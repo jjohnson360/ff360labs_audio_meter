@@ -37,7 +37,15 @@ void MeterDashboard::addModule(MeterModule* moduleToAdd)
         };
         
         resized();
+        notifyLayoutChanged();
     }
+}
+
+void MeterDashboard::setUiZoom(float zoom)
+{
+    uiZoom = zoom;
+    for (auto* w : floatingWindows)
+        w->setZoom(zoom);
 }
 
 void MeterDashboard::detachModule(MeterModule* moduleToDetach)
@@ -53,8 +61,9 @@ void MeterDashboard::detachModule(MeterModule* moduleToDetach)
 
         auto* floatingWin = new FloatingModuleWindow(moduleToDetach, [this](MeterModule* m) {
             reDockModule(m);
-        });
+        }, &getLookAndFeel(), uiZoom);
         floatingWindows.add(floatingWin);
+        notifyLayoutChanged();
     }
 }
 
@@ -91,6 +100,7 @@ void MeterDashboard::removeModule(MeterModule* moduleToRemove)
         {
             resized();
         }
+        notifyLayoutChanged();
     }
 }
 
@@ -118,6 +128,7 @@ void MeterDashboard::setLayoutMode(LayoutMode mode)
         }
         
         resized();
+        notifyLayoutChanged();
     }
 }
 

@@ -13,8 +13,6 @@ public:
     void resized() override;
     void timerCallback() override;
 
-    static void showModal(juce::Component* parent, FF360MeterProcessor& processor, juce::AudioDeviceManager* deviceManager, std::function<void()> onClosed = nullptr);
-
     std::function<void()> onClose;
 
 private:

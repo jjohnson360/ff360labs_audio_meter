@@ -12,7 +12,7 @@ MeterModule::MeterModule(const juce::String& name, MeterModuleType type)
 void MeterModule::showModuleMenu()
 {
     juce::PopupMenu menu;
-    menu.addItem(1, "Resize");
+    menu.addItem(1, "Focus / Back to Grid");
     menu.addItem(2, "Detach to Window", onDetach != nullptr);
     menu.addSeparator();
     menu.addItem(3, "Close / Remove", onClose != nullptr);
@@ -50,7 +50,7 @@ void MeterModule::paint(juce::Graphics& g)
     // Header Text — quiet sans-serif chrome (mockup's .m-title is muted/dim, not
     // bright bold mono; brightness and mono type are reserved for live data).
     g.setColour(ff360_labs::TextMuted);
-    g.setFont(FF360LabsLookAndFeel::getUiFont(10.5f, juce::Font::plain));
+    g.setFont(FF360LabsLookAndFeel::getUiFont(13.5f, juce::Font::plain).withExtraKerningFactor(0.06f));
     g.drawText(moduleName.toUpperCase(),
                headerRect.toNearestInt().withTrimmedLeft(padding * 2 + 2),
                juce::Justification::centredLeft,

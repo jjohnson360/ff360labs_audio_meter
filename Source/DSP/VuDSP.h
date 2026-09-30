@@ -63,6 +63,12 @@ private:
     float alphaAttack = 0.0f;
     float alphaRelease = 0.0f;
 
+    // Stage 1: symmetric mean-square integrator (true RMS, no ballistics bias)
+    float alphaIntegrate = 0.0f;
+    float meanSquareL = 0.0f;
+    float meanSquareR = 0.0f;
+
+    // Stage 2: asymmetric attack / release ballistics on the integrated power
     float statePowerL = 0.0f;
     float statePowerR = 0.0f;
 

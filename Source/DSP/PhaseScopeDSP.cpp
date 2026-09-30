@@ -20,19 +20,20 @@ void PhaseScopeDSP::prepare(double sampleRate, int /*samplesPerBlock*/)
     meanYY = 0.0f;
 }
 
-PhaseScopeData PhaseScopeDSP::processBlock(const juce::AudioBuffer<float>& buffer)
+void PhaseScopeDSP::processBlock(const juce::AudioBuffer<float>& buffer, PhaseScopeData& data)
 {
     int numChannels = buffer.getNumChannels();
     int numSamples = buffer.getNumSamples();
+
+    data.numPoints = 0;
+    if (numChannels == 0 || numSamples == 0)
+        return;
     
     const float* channelDataL = buffer.getReadPointer(0);
     const float* channelDataR = numChannels > 1 ? buffer.getReadPointer(1) : channelDataL;
     
-    PhaseScopeData data;
-    
-    // Decimation step size to limit points drawn per frame
-    int step = std::max(1, numSamples / MaxPointsPerBlock);
-    data.samplePairs.reserve(numSamples / step + 1);
+    // Decimation step size to limit points drawn per frame (ceil, so the count never exceeds MaxPoints)
+    int step = std::max(1, (numSamples + PhaseScopeData::MaxPoints - 1) / PhaseScopeData::MaxPoints);
     
     for (int i = 0; i < numSamples; ++i)
     {
@@ -44,10 +45,8 @@ PhaseScopeData PhaseScopeDSP::processBlock(const juce::AudioBuffer<float>& buffe
         meanXX += alpha * (l * l - meanXX);
         meanYY += alpha * (r * r - meanYY);
         
-        if (i % step == 0)
-        {
-            data.samplePairs.push_back({l, r});
-        }
+        if (i % step == 0 && data.numPoints < PhaseScopeData::MaxPoints)
+            data.samplePairs[(size_t) data.numPoints++] = { l, r };
     }
     
     // Calculate final correlation coefficient [-1.0, 1.0]
@@ -60,6 +59,4 @@ PhaseScopeData PhaseScopeDSP::processBlock(const juce::AudioBuffer<float>& buffe
     {
         data.correlation = 0.0f; // Silence
     }
-    
-    return data;
 }

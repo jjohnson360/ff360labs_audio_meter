@@ -12,6 +12,8 @@ void VuDSP::prepare(double sampleRate, int /*samplesPerBlock*/)
     currentSampleRate = sampleRate;
     statePowerL = 0.0f;
     statePowerR = 0.0f;
+    meanSquareL = 0.0f;
+    meanSquareR = 0.0f;
     updateCoefficients();
 }
 
@@ -33,6 +35,9 @@ void VuDSP::updateCoefficients()
     {
         alphaAttack  = 1.0f - std::exp(-1.0f / (attackTimeSec * static_cast<float>(currentSampleRate)));
         alphaRelease = 1.0f - std::exp(-1.0f / (releaseTimeSec * static_cast<float>(currentSampleRate)));
+
+        // 50 ms: long enough to flatten the power ripple of low notes before the ballistics
+        alphaIntegrate = 1.0f - std::exp(-1.0f / (0.05f * static_cast<float>(currentSampleRate)));
     }
 }
 
@@ -58,12 +63,18 @@ VuMeterData VuDSP::processBlock(const juce::AudioBuffer<float>& buffer)
         float powerL = inL * inL;
         float powerR = inR * inR;
 
-        // Continuous IIR integration on power with asymmetric ballistics
-        float aL = (powerL > statePowerL) ? alphaAttack : alphaRelease;
-        statePowerL += aL * (powerL - statePowerL);
+        // Symmetric mean-square integration first. Applying the asymmetric attack / release
+        // straight to x^2, which swings between 0 and the peak twice per cycle, settled above
+        // the true mean: a steady sine read ~1.2 dB hot.
+        meanSquareL += alphaIntegrate * (powerL - meanSquareL);
+        meanSquareR += alphaIntegrate * (powerR - meanSquareR);
 
-        float aR = (powerR > statePowerR) ? alphaAttack : alphaRelease;
-        statePowerR += aR * (powerR - statePowerR);
+        // Then the needle ballistics on the (now nearly ripple-free) power
+        float aL = (meanSquareL > statePowerL) ? alphaAttack : alphaRelease;
+        statePowerL += aL * (meanSquareL - statePowerL);
+
+        float aR = (meanSquareR > statePowerR) ? alphaAttack : alphaRelease;
+        statePowerR += aR * (meanSquareR - statePowerR);
     }
 
     // True RMS: sqrt of IIR-integrated mean-square power.

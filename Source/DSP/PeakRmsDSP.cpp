@@ -37,18 +37,15 @@ MeterData PeakRmsDSP::processBlock(const juce::AudioBuffer<float> &buffer) {
   int numSamples = buffer.getNumSamples();
 
   if (numChannels > 0 && numSamples > 0) {
-    auto *leftData = buffer.getReadPointer(0);
-    data.peakL = gainToDb(
-        juce::FloatVectorOperations::findMaximum(leftData, numSamples));
+    // Magnitude, not findMaximum(): the largest signed sample ignored negative-going peaks
+    data.peakL = gainToDb(buffer.getMagnitude(0, 0, numSamples));
     // NOTE: getRMSLevel() already returns the root-mean-square value (sqrt of
     // mean-square). Do NOT wrap in std::sqrt() again — that would compute
     // RMS^0.5 and read hot.
     data.rmsL = gainToDb(buffer.getRMSLevel(0, 0, numSamples));
 
     if (numChannels > 1) {
-      auto *rightData = buffer.getReadPointer(1);
-      data.peakR = gainToDb(
-          juce::FloatVectorOperations::findMaximum(rightData, numSamples));
+      data.peakR = gainToDb(buffer.getMagnitude(1, 0, numSamples));
       data.rmsR = gainToDb(buffer.getRMSLevel(1, 0, numSamples));
     } else {
       // Mono
