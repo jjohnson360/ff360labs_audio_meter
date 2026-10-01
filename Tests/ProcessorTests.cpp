@@ -248,6 +248,64 @@ static void testFftResolutionSwitch()
     }
 }
 
+static void testSpectrumDisplay()
+{
+    std::cout << "Spectrum display (low end continuous and smooth)" << std::endl;
+
+    for (auto res : { FFTResolution::Low, FFTResolution::Mid, FFTResolution::High })
+    {
+        auto procHolder = std::make_unique<FF360MeterProcessor>();
+        auto& proc = *procHolder;
+        proc.spectrumDSP.setFFTResolution(res);
+        proc.setRateAndBufferSizeDetails(48000.0, 512);
+        proc.prepareToPlay(48000.0, 512);
+
+        SpectrumAnalyzerModule module(proc.spectrumFifo, proc.spectrumDSP, proc.apvts);
+
+        // A 55 Hz tone plus broadband content, drained by the module as the UI would
+        juce::AudioBuffer<float> block(2, 512);
+        juce::MidiBuffer midi;
+        juce::Random random(42);
+        long long n = 0;
+        for (int b = 0; b < 200; ++b)
+        {
+            for (int i = 0; i < 512; ++i, ++n)
+            {
+                const float s = 0.3f * (float) std::sin(juce::MathConstants<double>::twoPi * 55.0 * (double) n / 48000.0)
+                              + 0.05f * (random.nextFloat() * 2.0f - 1.0f);
+                block.setSample(0, i, s);
+                block.setSample(1, i, s);
+            }
+            proc.processBlock(block, midi);
+            module.timerCallback();
+        }
+
+        const juce::String fft = "FFT " + juce::String(1 << static_cast<int>(res));
+        const int points = module.getNumDisplayPoints();
+        check(points > 0, "display points mapped, " + fft);
+        if (points == 0)
+            continue;
+
+        const float* levels = module.getDisplayLevels();
+        const double ratio = std::pow(24000.0 / 20.0, 1.0 / (points - 1));
+        float lowest = 1000.0f, maxStep = 0.0f;
+        for (int i = 0; i < points && 20.0 * std::pow(ratio, i) < 200.0; ++i)
+        {
+            lowest = juce::jmin(lowest, levels[i]);
+            if (i > 0)
+                maxStep = juce::jmax(maxStep, std::abs(levels[i] - levels[i - 1]));
+        }
+
+        // The old trace ramped from the first bin down to the plot's corner (no data below
+        // ~47 Hz at 1024 points) and drew one straight segment per bin. The noise floor here is
+        // ~-60 dB; at 4096 points real valleys and tone skirts between bins are resolved.
+        check(lowest > -70.0f, "20-200 Hz stays above -70 dB (the plot floor is -80) with a -10 dBFS 55 Hz tone, " + fft
+                                   + " (lowest " + juce::String(lowest, 1) + ")");
+        check(maxStep < 6.0f, "20-200 Hz has no step over 6 dB between display points, " + fft
+                                   + " (largest " + juce::String(maxStep, 2) + ")");
+    }
+}
+
 static void testCorrelation()
 {
     std::cout << "Phase scope correlation" << std::endl;
@@ -464,10 +522,11 @@ static void testEditor()
 
 //==============================================================================
 // Renders the editor, with signal through it, into a PNG at the given scale
-static void writeScreenshot(const juce::File& file, float scale, const juce::String& layoutName)
+static void writeScreenshot(const juce::File& file, float scale, const juce::String& layoutName, int fftOrder)
 {
     auto procHolder = std::make_unique<FF360MeterProcessor>();
     auto& proc = *procHolder;
+    proc.spectrumDSP.setFFTResolution(static_cast<FFTResolution>(fftOrder));
     proc.setRateAndBufferSizeDetails(48000.0, 512);
     proc.prepareToPlay(48000.0, 512);
 
@@ -533,12 +592,13 @@ int main(int argc, char** argv)
 
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    // --screenshot <file.png> [scale] [layout]
+    // --screenshot <file.png> [scale] [layout] [fft order 10-12]
     if (argc >= 3 && juce::String(argv[1]) == "--screenshot")
     {
         writeScreenshot(juce::File::getCurrentWorkingDirectory().getChildFile(argv[2]),
                         argc >= 4 ? juce::String(argv[3]).getFloatValue() : 1.0f,
-                        argc >= 5 ? juce::String(argv[4]) : juce::String("Full Suite"));
+                        argc >= 5 ? juce::String(argv[4]) : juce::String("Full Suite"),
+                        argc >= 6 ? juce::String(argv[5]).getIntValue() : 11);
         return 0;
     }
 
@@ -550,6 +610,7 @@ int main(int argc, char** argv)
     testNegativePeaks();
     testSpectrumCalibration();
     testFftResolutionSwitch();
+    testSpectrumDisplay();
     testCorrelation();
     testResetsAndSessionMaxima();
     testDevOsc();
