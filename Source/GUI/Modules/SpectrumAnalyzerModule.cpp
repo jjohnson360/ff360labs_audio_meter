@@ -9,8 +9,8 @@ SpectrumAnalyzerModule::SpectrumAnalyzerModule(AudioFifo<SpectrumData, 8>& fifoT
       spectrumDSP(dspToUse),
       apvts(apvtsToUse)
 {
-    setTooltip("Spectrum Analyzer: level per frequency in dBFS (a 0 dBFS sine reads 0 dB). "
-               "Gold is the left channel, grey the right.");
+    setTooltip("Spectrum Analyzer: level per frequency in dBFS. The low end is interpolated between "
+               "FFT bins and the top end averaged over 1/6 octave. Gold is the left channel, grey the right.");
 
     // Phase 10.5: FFT resolution selector with tooltip explaining the tradeoff
     fftResolutionCombo.setTextWhenNothingSelected("FFT Res");
@@ -39,31 +39,101 @@ SpectrumAnalyzerModule::~SpectrumAnalyzerModule()
 
 void SpectrumAnalyzerModule::timerCallback()
 {
-    if (meterFifo.pullLatest(currentData) && currentData.numBins > 0)
+    if (meterFifo.pullLatest(currentData) && currentData.numBins > 1)
     {
         currentSampleRate = currentData.sampleRate > 0.0 ? currentData.sampleRate : 48000.0;
+
+        if (currentData.numBins != mappedBins || currentSampleRate != mappedSampleRate)
+            rebuildDisplayMap(currentData.numBins, currentSampleRate);
+
+        mapToDisplay(currentData.magnitudesL.data(), currentData.numBins, displayL.data());
+        if (currentData.hasRight)
+            mapToDisplay(currentData.magnitudesR.data(), currentData.numBins, displayR.data());
+
         repaint(getModuleBounds());
     }
 }
 
-float SpectrumAnalyzerModule::getLogX(float binIndex, float numBins, float width)
+void SpectrumAnalyzerModule::rebuildDisplayMap(int numBins, double sampleRate)
 {
-    float minFreq = 20.0f;
-    float maxFreq = static_cast<float>(currentSampleRate) / 2.0f;
+    // Display points are log-spaced from 20 Hz to Nyquist, matching the grid
+    const double binWidth = sampleRate / (2.0 * numBins);
+    const double minFreq = 20.0;
+    const double maxFreq = sampleRate * 0.5;
+    const double ratio = std::pow(maxFreq / minFreq, 1.0 / (double) (NumDisplayPoints - 1));
+    const double halfBand = std::pow(2.0, 0.5 * SmoothingOctaves);
+    const double maxPos = (double) numBins - 0.5;
 
-    float binFreq = (binIndex / numBins) * maxFreq;
-    binFreq = std::max(minFreq, binFreq);
+    for (int i = 0; i < NumDisplayPoints; ++i)
+    {
+        auto& p = displayPoints[(size_t) i];
+        const double centre = minFreq * std::pow(ratio, (double) i) / binWidth;
 
-    float logMin  = std::log10(minFreq);
-    float logMax  = std::log10(maxFreq);
-    float logFreq = std::log10(binFreq);
+        // Below the first bin, hold its level: bin 0 is DC, and the old trace sloped down to
+        // the corner there, which looked like the low end vanishing at Low (1024)
+        p.centre = (float) juce::jlimit(1.0, (double) (numBins - 1), centre);
 
-    float normalized = (logFreq - logMin) / (logMax - logMin);
-    return juce::jlimit(0.0f, 1.0f, normalized) * width;
+        // Triangle peaking at the centre, zero at the band edges (log-symmetric)
+        const double lo = juce::jlimit(1.0, maxPos, centre / halfBand);
+        const double hi = juce::jlimit(1.0, maxPos, centre * halfBand);
+        p.lo = (float) lo;
+        p.hi = (float) hi;
+        p.invRise = (float) (1.0 / std::max(1.0e-6, p.centre - lo));
+        p.invFall = (float) (1.0 / std::max(1.0e-6, hi - p.centre));
+        p.k0 = juce::jlimit(1, numBins - 1, (int) std::ceil(lo));
+        p.k1 = juce::jlimit(1, numBins - 1, (int) std::floor(hi));
+
+        double totalW = 0.0;
+        for (int k = p.k0; k <= p.k1; ++k)
+            totalW += p.weight(k);
+        p.invTotalW = totalW > 1.0e-6 ? (float) (1.0 / totalW) : 0.0f;
+
+        // 0 (interpolate) while the band covers under ~2 bins, 1 (average) once it covers ~4
+        p.bandBlend = totalW > 1.0e-6 ? (float) juce::jlimit(0.0, 1.0, 0.5 * (hi - lo) - 1.0) : 0.0f;
+    }
+
+    mappedBins = numBins;
+    mappedSampleRate = sampleRate;
+}
+
+void SpectrumAnalyzerModule::mapToDisplay(const float* binsDb, int numBins, float* outDb) const
+{
+    auto dbToPower = [](float db) { return std::pow(10.0f, db * 0.1f); };
+
+    for (int i = 0; i < NumDisplayPoints; ++i)
+    {
+        const auto& p = displayPoints[(size_t) i];
+
+        // Sparse bins (low end): Catmull-Rom through the bin levels, so the curve is smooth
+        // instead of a straight segment per bin
+        float db = 0.0f;
+        if (p.bandBlend < 1.0f)
+        {
+            const int k = std::min((int) p.centre, numBins - 2);
+            const float t = p.centre - (float) k;
+            const float y0 = binsDb[std::max(1, k - 1)];
+            const float y1 = binsDb[k];
+            const float y2 = binsDb[k + 1];
+            const float y3 = binsDb[std::min(numBins - 1, k + 2)];
+            db = y1 + 0.5f * t * ((y2 - y0) + t * ((2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3) + t * (3.0f * (y1 - y2) + y3 - y0)));
+        }
+
+        // Dense bins (top end): triangular-weighted mean power over the band, so it isn't jagged
+        if (p.bandBlend > 0.0f)
+        {
+            float sum = 0.0f;
+            for (int k = p.k0; k <= p.k1; ++k)
+                sum += dbToPower(binsDb[k]) * p.weight(k);
+            const float bandDb = 10.0f * std::log10(std::max(1.0e-12f, sum * p.invTotalW));
+            db += p.bandBlend * (bandDb - db);
+        }
+
+        outDb[i] = juce::jlimit(-120.0f, 12.0f, db);
+    }
 }
 
 void SpectrumAnalyzerModule::drawSpectrum(juce::Graphics& g,
-                                           const float* magnitudes, int numBins,
+                                           const float* displayDb,
                                            juce::Rectangle<float> plotArea,
                                            float minDb, float rangeDb,
                                            juce::Colour lineColour,
@@ -74,26 +144,22 @@ void SpectrumAnalyzerModule::drawSpectrum(juce::Graphics& g,
     float yOffset = plotArea.getY();
     float xOffset = plotArea.getX();
 
-    if (numBins < 2) return;
-
     juce::Path curvePath;
     juce::Path fillPath;
-    bool first = true;
 
-    for (int i = 1; i < numBins; ++i)
+    for (int i = 0; i < NumDisplayPoints; ++i)
     {
-        float db = magnitudes[i];
-        float normalizedY = 1.0f - juce::jlimit(0.0f, 1.0f, (db - minDb) / rangeDb);
+        float normalizedY = 1.0f - juce::jlimit(0.0f, 1.0f, (displayDb[i] - minDb) / rangeDb);
 
-        float x = xOffset + getLogX(static_cast<float>(i), static_cast<float>(numBins), w);
+        // Points are log-spaced across the plot
+        float x = xOffset + w * (float) i / (float) (NumDisplayPoints - 1);
         float y = yOffset + (normalizedY * h);
 
-        if (first)
+        if (i == 0)
         {
-            fillPath.startNewSubPath(xOffset, yOffset + h);
+            fillPath.startNewSubPath(x, yOffset + h);
             fillPath.lineTo(x, y);
             curvePath.startNewSubPath(x, y);
-            first = false;
         }
         else
         {
@@ -204,7 +270,7 @@ void SpectrumAnalyzerModule::paintModule(juce::Graphics& g)
                    juce::Justification::centredRight, false);
     }
 
-    if (currentData.numBins < 2) return;
+    if (mappedBins < 2) return;
 
     // 3. Draw R channel first (behind), desaturated gold-gray, no fill
     if (currentData.hasRight)
@@ -212,11 +278,11 @@ void SpectrumAnalyzerModule::paintModule(juce::Graphics& g)
         juce::Colour rColour = ff360_labs::AccentGold
                                    .withSaturation(0.25f)
                                    .withAlpha(0.55f);
-        drawSpectrum(g, currentData.magnitudesR.data(), currentData.numBins, plotArea, minDb, rangeDb, rColour, false);
+        drawSpectrum(g, displayR.data(), plotArea, minDb, rangeDb, rColour, false);
     }
 
     // 4. Draw L channel on top, full gold with gradient fill
-    drawSpectrum(g, currentData.magnitudesL.data(), currentData.numBins, plotArea, minDb, rangeDb,
+    drawSpectrum(g, displayL.data(), plotArea, minDb, rangeDb,
                  ff360_labs::AccentGold, true);
 
     // 5. Channel legend (top-right corner)
